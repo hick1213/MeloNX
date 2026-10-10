@@ -64,6 +64,9 @@ struct ContentView: View {
             _ = await BuiltInJITCoordinator.shared.enableExternal()
             
             ryujinxController.loadGames()
+#if DEBUG
+            await NSZImportDiagnostic.runIfRequested()
+#endif
             
             try? await Task.sleep(nanoseconds: 100_000_000)
             

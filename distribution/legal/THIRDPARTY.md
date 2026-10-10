@@ -711,3 +711,9 @@
   SOFTWARE.
   ```
 </details>
+
+## NSZ conversion
+
+ZstdSharp.Port 0.8.8 (Oleg Stepanischev), MIT license. Exact NuGet source commit: 2cd0c019693bc786a5fe5c3be94e107b24e7267e. License is embedded in the iOS app as Resources/LICENSE-ZstdSharp.txt.
+
+The NSZ/NCZ format implementation in Ryujinx.Nsz is new project code, informed by the public format documentation at https://github.com/nicoboss/nsz/blob/master/docs/formats.md; no NSZ Python implementation is bundled.

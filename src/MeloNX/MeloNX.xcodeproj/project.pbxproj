@@ -165,7 +165,7 @@
 /* Begin PBXLegacyTarget section */
 		4EF06B692FA36B2400E56036 /* Ryujinx */ = {
 			isa = PBXLegacyTarget;
-			buildArgumentsString = ./distribution/ios/build.sh;
+			buildArgumentsString = "./distribution/ios/build.sh $(CONFIGURATION)";
 			buildConfigurationList = 4EF06B6C2FA36B2500E56036 /* Build configuration list for PBXLegacyTarget "Ryujinx" */;
 			buildPhases = (
 			);

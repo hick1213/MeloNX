@@ -17,6 +17,9 @@
     <HybridGlobalization>true</HybridGlobalization>
     <OptimizationPreference>Speed</OptimizationPreference>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(MeloNXImportDiagnostics)' == 'true'">
+    <DefineConstants>$(DefineConstants);MELONX_IMPORT_DIAGNOSTICS</DefineConstants>
+  </PropertyGroup>
 
   <ItemGroup>
   <TrimmerRootDescriptor Include="TrimmerRoots.xml" />

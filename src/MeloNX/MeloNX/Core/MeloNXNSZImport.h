@@ -19,4 +19,7 @@ void nsz_import_cancel(void *handle);
 char *nsz_import_result(void *handle);
 void nsz_import_free(void *handle);
 void nsz_import_string_free(char *value);
+#if DEBUG
+char *nsz_conversion_probe(const char *source_path, const char *output_path);
+#endif
 #endif

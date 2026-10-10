@@ -24,6 +24,9 @@ if [ -z "$DOTNET" ] || [ ! -x "$DOTNET" ]; then
 fi
 
 publish_args=(publish -c Release -r ios-arm64 -p:ExtraDefineConstants=DISABLE_UPDATER src/Ryujinx.Library --self-contained true)
+if [ "${1:-${CONFIGURATION:-Release}}" = "Debug" ]; then
+  publish_args+=(-p:MeloNXImportDiagnostics=true)
+fi
 if [ -n "${MELONX_NUGET_CONFIG:-}" ]; then
   if [ ! -f "$MELONX_NUGET_CONFIG" ] || [ ! -r "$MELONX_NUGET_CONFIG" ]; then
     echo "NuGet configuration is not readable: $MELONX_NUGET_CONFIG" >&2

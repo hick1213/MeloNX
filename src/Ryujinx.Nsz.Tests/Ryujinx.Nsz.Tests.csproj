@@ -3,6 +3,8 @@
     <IsPackable>false</IsPackable>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <DefineConstants>$(DefineConstants);MELONX_IMPORT_DIAGNOSTICS</DefineConstants>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <DefaultItemExcludes>$(DefaultItemExcludes);**/._*</DefaultItemExcludes>
   </PropertyGroup>
   <ItemGroup>
@@ -12,5 +14,6 @@
     <PackageReference Include="Ryujinx.LibHac" />
     <ProjectReference Include="../Ryujinx.Nsz/Ryujinx.Nsz.csproj" />
     <Compile Include="../Ryujinx.Library/Compression/NszPackageValidator.cs" Link="Production/NszPackageValidator.cs" />
+    <Compile Include="../Ryujinx.Library/Compression/NszConversionDiagnostic.cs" Link="Diagnostics/NszConversionDiagnostic.cs" />
   </ItemGroup>
 </Project>
