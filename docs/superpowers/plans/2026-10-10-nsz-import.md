@@ -204,6 +204,20 @@ active-free does not release anything. Swift borrower locking prevents free/prog
 - [ ] Implement package parser using existing LibHac KeySet/Nca/Cnmt APIs, extracting the
   application relationship from metadata instead of guessed filenames. Treat no unique
   intended package role as Unsupported. Populate GameInfo only after application validation.
+  Existing `NcaExtensions.GetCnmt(IntegrityCheckLevel, ContentMetaType)` and Cnmt's
+  `ApplicationTitleId/TitleId/Type` provide the real relationships. Parse against an owned
+  KeySet snapshot; import container tickets into that snapshot, not the live global KeySet.
+  Bound CNMT file/counts before calling its parser. Core mapping is:
+
+```csharp
+var kind = cnmt.Type switch {
+    ContentMetaType.Application => NszPackageKind.Application,
+    ContentMetaType.Patch => NszPackageKind.Patch,
+    ContentMetaType.AddOnContent => NszPackageKind.AddOnContent,
+    _ => NszPackageKind.Unsupported
+};
+var package = new NszPackage(kind, cnmt.ApplicationTitleId, cnmt.TitleId);
+```
 - [ ] Add native bridge using owned GCHandle/job registry; create validates bounded request
   JSON/version/id/intent/root/outputName, copies strings, captures validator and returns handle.
   Native methods catch all managed exceptions, return fixed errors and never leak section keys.
@@ -325,7 +339,8 @@ updates.json/dlc.json schemas using committed URL and verified application ID.
 
 - [ ] Write regression with sourceURL == finalURL seeded by converter and an existing
   addon of same name; direct registration must retain both file contents and existing config.
-- [ ] Route NSZ selection to target Documents/games/<applicationID>/updates or dlc and
+- [ ] Route NSZ selection to existing Documents/updates/<16-hex-applicationID> or
+  Documents/dlc/<16-hex-applicationID> (configuration remains in Documents/games/<id>) and
   correct expected role/application. Reject incompatible package before committing.
 - [ ] Extract registration-only helpers from each handler, preserving schema. Normalized
   files call helpers directly; ordinary imports retain copy behavior. No remove/copy against
