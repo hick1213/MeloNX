@@ -12,6 +12,7 @@ import MeloNXImportCore
 
 extension RyujinxController {
     func beginNSZImport(urls: [URL], intent: NSZImportIntent,
+                        onImported: (@MainActor (NSZImportedFile) throws -> Void)? = nil,
                         completion: @escaping @MainActor (Result<[NSZImportedFile], Error>) -> Void) {
         guard canBeginPackageImport, !urls.isEmpty, urls.allSatisfy({ NSZImportRouting.isNSZ(extension: $0.pathExtension) }) else {
             let error = NSZNativeFailure(code: "busy")
@@ -19,7 +20,7 @@ extension RyujinxController {
             completion(.failure(error)); return
         }
         NSZImportCoordinator.shared.begin(urls: urls, target: intent.target, kind: intent.kind,
-                                         applicationID: intent.applicationID, completion: completion)
+                                         applicationID: intent.applicationID, onImported: onImported, completion: completion)
     }
     public func handleRunningGame(result: Result<[URL], Error>) {
         switch result {
@@ -66,9 +67,11 @@ extension RyujinxController {
                     AppAlerts.showSyncAlert(title: "NSZ Import", message: "Select NSZ files separately from other game formats.")
                     return
                 }
-                beginNSZImport(urls: urls, intent: .library) { [weak self] result in
-                    if case .success = result { self?.loadGames() }
-                }
+                beginNSZImport(urls: urls, intent: .library, onImported: { [weak self] _ in self?.loadGames() }) { _ in }
+                return
+            }
+            guard NSZImportRouting.acceptsSelection(extensions: urls.map(\.pathExtension)) else {
+                AppAlerts.showSyncAlert(title: "Game Import", message: "Select one uncompressed game at a time. Multiple NSZ files can be queued together.")
                 return
             }
             

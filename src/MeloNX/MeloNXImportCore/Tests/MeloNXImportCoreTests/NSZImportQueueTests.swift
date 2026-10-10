@@ -39,4 +39,41 @@ import XCTest
         held.finishError(); _ = await work.value
         XCTAssertEqual(engine.phase, .failed)
     }
+    func testSuccessThenFailureKeepsAndRegistersFirstCompletedItem() async {
+        let queue = NSZImportQueue(), first = HeldNSZImportWorker(), second = HeldNSZImportWorker()
+        var registered: [UUID] = []
+        queue.onImported = { registered.append($0.operationID) }
+        let work = Task { await queue.importFiles(workers: [first, second], ids: [first.id, second.id]) }
+        await first.waitUntilStarted(); first.finishCommitted(); await second.waitUntilStarted()
+        XCTAssertEqual(registered, [first.id])
+        second.finishError(); _ = await work.value
+        XCTAssertEqual(queue.completedFiles.map(\.operationID), [first.id])
+        XCTAssertEqual(registered, [first.id])
+        XCTAssertNotNil(queue.error)
+    }
+    func testRegistrationFailureStopsFurtherWorkButRetainsCompletedPath() async {
+        let queue = NSZImportQueue(), first = HeldNSZImportWorker(), second = HeldNSZImportWorker()
+        queue.onImported = { _ in throw CocoaError(.fileWriteOutOfSpace) }
+        let work = Task { await queue.importFiles(workers: [first, second], ids: [first.id, second.id]) }
+        await first.waitUntilStarted(); first.finishCommitted(); _ = await work.value
+        XCTAssertFalse(second.started)
+        XCTAssertEqual(queue.completedFiles.map(\.path), ["/owned/game.nsp"])
+        XCTAssertNotNil(queue.error)
+    }
+    func testUncompressedMultipleSelectionIsRejectedExplicitly() {
+        XCTAssertTrue(NSZImportRouting.acceptsSelection(extensions: ["NSZ", "nsZ"]))
+        XCTAssertTrue(NSZImportRouting.acceptsSelection(extensions: ["xci"]))
+        XCTAssertFalse(NSZImportRouting.acceptsSelection(extensions: ["nsp", "xci"]))
+        XCTAssertFalse(NSZImportRouting.acceptsSelection(extensions: ["nsp", "nsp"]))
+    }
+    func testLateCancelReportsRetainedPathWithoutRegisteringIt() async {
+        let queue = NSZImportQueue(), held = HeldNSZImportWorker()
+        var registrations = 0; queue.onImported = { _ in registrations += 1 }
+        let work = Task { await queue.importFiles(workers: [held], ids: [held.id]) }
+        await held.waitUntilStarted(); held.finishCancelled(path: "/owned/retained.nsp")
+        _ = await work.value
+        XCTAssertEqual(registrations, 0)
+        XCTAssertEqual((queue.error as? NSZImportCancellation)?.retainedPath, "/owned/retained.nsp")
+        XCTAssertEqual(queue.engine.phase, .cancelled)
+    }
 }

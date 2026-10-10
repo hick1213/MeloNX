@@ -147,5 +147,9 @@ import XCTest
         continuation?.resume(throwing: NSError(domain: "test", code: 1))
         continuation = nil
     }
+    func finishCancelled(path: String) {
+        hasEnded = true
+        continuation?.resume(throwing: NSZImportCancellation(retainedPath: path)); continuation = nil
+    }
     func confirmEnd() { hasEnded = true }
 }

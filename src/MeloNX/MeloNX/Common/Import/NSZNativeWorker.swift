@@ -94,7 +94,10 @@ nonisolated struct NSZNativeFailure: LocalizedError {
             defer { nsz_import_string_free(string) }
             return Data(String(cString: string).utf8)
         } ?? nil
-        if status == 1 { throw CancellationError() }
+        if status == 1 {
+            let result = resultData.flatMap { try? JSONDecoder().decode(NSZNativeResult.self, from: $0) }
+            throw NSZImportCancellation(retainedPath: result?.path)
+        }
         guard let resultData, resultData.count <= 65536 else { throw NSZNativeFailure(code: "import_failed") }
         let result = try JSONDecoder().decode(NSZNativeResult.self, from: resultData)
         guard result.version == 1, result.id == request.id, result.status == status else { throw NSZNativeFailure(code: "import_failed") }

@@ -8,7 +8,7 @@ Run `Ryujinx.Nsz.Tests` with `--filter ExportDeviceFixtures` and set `MELONX_NSZ
 
 ## Debug probe
 
-Xcode Debug forwards CONFIGURATION to the native build. `distribution/ios/build.sh` enables `MeloNXImportDiagnostics=true` only for Debug. Release/default command-line publishes exclude `nsz_conversion_probe`; production `nsz_import_*` always uses the real NCA/CNMT validator.
+Xcode forwards its configuration as the explicit argument to the native build (the legacy target retains its working environment mode). `distribution/ios/build.sh` enables `MeloNXImportDiagnostics=true` only for Debug. Release/default command-line publishes exclude `nsz_conversion_probe`; production `nsz_import_*` always uses the real NCA/CNMT validator.
 
 Copy the tiny fixture directory to app `Documents/Downloads/NSZImportQA`. Launch the Debug app with `--nsz-conversion-proof`. The probe writes unique NSP output filenames and `proof.json` in that QA directory, checks complete bytes/hashes, keeps cancellation blocked until the owned worker ends, and injects insufficient space. It cannot publish to the library/update/DLC roots. Roundtrip output files and compare their SHA256 with the manifest.
 

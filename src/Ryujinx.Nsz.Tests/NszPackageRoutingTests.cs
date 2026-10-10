@@ -87,6 +87,17 @@ public class NszPackageRoutingTests
     {
         Assert.That(NszContentManifest.ContentTypeMatches((byte)cnmt, (byte)nca), Is.EqualTo(expected));
     }
+    [Test]
+    public void RejectsValidManifestWithExtraUnrelatedControlNca()
+    {
+        var manifest = NszContentManifest.Read(new MemoryStream(Cnmt(0x80, 0x100)), default);
+        string payload = manifest.Contents[0].ContentId, meta = new('2', 32), extraControl = new('3', 32);
+        Assert.DoesNotThrow(() => NszContentManifest.ValidateIncludedNcas(manifest, meta, [payload, meta]));
+        var error = Assert.Throws<NszImportException>(() => NszContentManifest.ValidateIncludedNcas(manifest, meta, [payload, meta, extraControl]));
+        Assert.That(error!.Code, Is.EqualTo(NszImportError.UnsupportedPackage));
+        Assert.That(NszContentManifest.TitleMatches(manifest.Package, 0, 0x200), Is.False);
+        Assert.That(NszContentManifest.TitleMatches(manifest.Package, 1, 0x101), Is.True);
+    }
     internal static byte[] Cnmt(byte type, ulong title)
     {
         int table = type == 0x81 ? 0x18 : 0x10;

@@ -27,7 +27,7 @@ import Foundation
             while !worker.hasEnded { try? await Task.sleep(nanoseconds: 20_000_000) }
         }
         if Task.isCancelled { cancel(id: id) }
-        if cancelled || error is CancellationError {
+        if cancelled || error is CancellationError || error is NSZImportCancellation {
             result = nil; phase = .cancelled
         } else if error != nil || result?.operationID != id {
             result = nil; phase = .failed

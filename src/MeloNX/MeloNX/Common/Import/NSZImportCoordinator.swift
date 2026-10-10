@@ -12,6 +12,7 @@ import MeloNXImportCore
     private var poller: Task<Void, Never>?
     private(set) var sourceName = ""
     private(set) var packageKind = 0
+    private(set) var retainedPaths: [String] = []
     var isBusy: Bool { task != nil }
     var phase: NSZImportPhase { engine.phase }
     var completedBytes: Int64 { engine.completedBytes }
@@ -24,7 +25,8 @@ import MeloNXImportCore
             if case .success(let files) = result, let file = files.first { onImported(file) }
         }
     }
-    func begin(urls: [URL], target: URL, kind: Int, applicationID: UInt64?, completion: @escaping @MainActor (Result<[NSZImportedFile], Error>) -> Void) {
+    func begin(urls: [URL], target: URL, kind: Int, applicationID: UInt64?, onImported: (@MainActor (NSZImportedFile) throws -> Void)? = nil,
+               completion: @escaping @MainActor (Result<[NSZImportedFile], Error>) -> Void) {
         guard !isBusy, queue.canStart, !urls.isEmpty, urls.count <= 32 else {
             AppAlerts.showSyncAlert(title: "NSZ Import", message: NSZNativeFailure(code: "busy").localizedDescription)
             completion(.failure(NSZNativeFailure(code: "busy")))
@@ -32,6 +34,7 @@ import MeloNXImportCore
         }
         let leases = urls.map { NSZSourceLease(url: $0) }
         packageKind = kind
+        retainedPaths = []; queue.onImported = onImported
         let ids = urls.map { _ in UUID() }
         let workers = zip(urls, zip(ids, leases)).map { url, item in
             NSZNativeWorker(request: NSZNativeRequest(id: item.0, source: url.path, targetRoot: target.path,
@@ -52,14 +55,23 @@ import MeloNXImportCore
                 }
             }
             let result = await queue.importFiles(workers: workers, ids: ids)
+            retainedPaths = queue.completedFiles.map(\.path)
+            if let path = (queue.error as? NSZImportCancellation)?.retainedPath { retainedPaths.append(path) }
+            queue.onImported = nil
             poller?.cancel(); poller = nil; self.worker = nil; operationID = nil; task = nil
             objectWillChange.send()
             if let result { completion(.success(result)) }
-            else if !Task.isCancelled, engine.phase == .failed {
-                let error = engine.error ?? NSZNativeFailure(code: "import_failed")
+            else if !Task.isCancelled, !(queue.error is NSZImportCancellation), (queue.error != nil || engine.phase == .failed) {
+                let error = queue.error ?? engine.error ?? NSZNativeFailure(code: "import_failed")
                 AppAlerts.showSyncAlert(title: "NSZ Import Failed", message: error.localizedDescription)
                 completion(.failure(error))
-            } else { completion(.failure(CancellationError())) }
+            } else {
+                if !retainedPaths.isEmpty {
+                    let names = retainedPaths.map { URL(fileURLWithPath: $0).lastPathComponent }.joined(separator: ", ")
+                    AppAlerts.showSyncAlert(title: "NSZ Import Cancelled", message: "Completed packages were kept: \(names)")
+                }
+                completion(.failure(CancellationError()))
+            }
         }
         objectWillChange.send()
     }

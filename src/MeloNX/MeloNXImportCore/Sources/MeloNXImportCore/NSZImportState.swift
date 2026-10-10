@@ -12,6 +12,10 @@ public struct NSZImportedFile: Sendable {
         self.operationID = operationID; self.path = path; self.kind = kind; self.applicationID = applicationID
     }
 }
+public struct NSZImportCancellation: Error, Sendable {
+    public let retainedPath: String?
+    public init(retainedPath: String?) { self.retainedPath = retainedPath }
+}
 @MainActor public protocol NSZImportWorker: AnyObject {
     var hasEnded: Bool { get }
     func run() async throws -> NSZImportedFile

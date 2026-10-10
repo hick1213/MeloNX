@@ -2,7 +2,7 @@ using System.Buffers.Binary;
 
 namespace Ryujinx.Nsz;
 
-public sealed record NszContentEntry(string ContentId, long Size, byte Type, byte[] Hash);
+public sealed record NszContentEntry(string ContentId, long Size, byte Type, byte[] Hash, byte IdOffset = 0);
 public sealed record NszContentManifest(NszPackage Package, IReadOnlyList<NszContentEntry> Contents)
 {
     // Validate bounds before downstream LibHac parsers can allocate extended patch arrays.
@@ -37,7 +37,7 @@ public sealed record NszContentManifest(NszPackage Package, IReadOnlyList<NszCon
             long size = BinaryPrimitives.ReadUInt32LittleEndian(raw.AsSpan(0x30)) | ((long)BinaryPrimitives.ReadUInt16LittleEndian(raw.AsSpan(0x34)) << 32);
             if (size <= 0 || raw[0x36] > 6 || !ids.Add(id))
                 throw new InvalidDataException("CNMT content entry is invalid.");
-            entries.Add(new(id, size, raw[0x36], raw[..32]));
+            entries.Add(new(id, size, raw[0x36], raw[..32], raw[0x37]));
         }
         return new(new(kind, applicationId, titleId), entries);
     }
@@ -85,4 +85,17 @@ public sealed record NszContentManifest(NszPackage Package, IReadOnlyList<NszCon
         0 => ncaType == 1, 1 => ncaType == 0, 2 => ncaType is 4 or 5,
         3 => ncaType == 2, 4 or 5 => ncaType == 3, 6 => ncaType == 4, _ => false
     };
+    public static void ValidateIncludedNcas(NszContentManifest manifest, string metadataId, IEnumerable<string> includedIds)
+    {
+        var allowed = manifest.Contents.Select(e => e.ContentId).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        allowed.Add(metadataId);
+        if (includedIds.Any(id => !allowed.Contains(id)))
+            throw new NszImportException(NszImportError.UnsupportedPackage, "Package contains unreferenced or unrelated NCA content.");
+    }
+    public static bool TitleMatches(NszPackage package, byte idOffset, ulong ncaTitleId)
+    {
+        if (idOffset > 15 || package.ContentId > ulong.MaxValue - idOffset || package.ApplicationId > ulong.MaxValue - idOffset) return false;
+        return ncaTitleId == package.ContentId + idOffset ||
+            (package.Kind == NszPackageKind.Patch && ncaTitleId == package.ApplicationId + idOffset);
+    }
 }

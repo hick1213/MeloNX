@@ -44,7 +44,8 @@ internal sealed class NszPackageValidator(KeySet ownedKeys) : INszPackageValidat
                 finally { CryptographicOperations.ZeroMemory(key); }
             }
             var manifests = new List<NszContentManifest>();
-            var contents = new Dictionary<string, (long Size, byte[] Hash, NcaContentType Type)>(StringComparer.OrdinalIgnoreCase);
+            var metadataIds = new List<string>();
+            var contents = new Dictionary<string, (long Size, byte[] Hash, NcaContentType Type, ulong TitleId)>(StringComparer.OrdinalIgnoreCase);
             byte[] buffer = new byte[1 << 20];
             foreach (var entry in entries.Where(e => e.Name.EndsWith(".nca", StringComparison.OrdinalIgnoreCase)))
             {
@@ -67,21 +68,24 @@ internal sealed class NszPackageValidator(KeySet ownedKeys) : INszPackageValidat
                         var manifest = NszContentManifest.Read(cnmt, cancellation);
                         if (manifest.Package.ContentId != nca.Header.TitleId) throw new InvalidDataException("Metadata title identity is inconsistent.");
                         manifests.Add(manifest);
+                        metadataIds.Add(entry.Name.Split('.')[0]);
                     }
                 }
                 slice.Position = 0; using var digest = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
                 int read;
                 while ((read = slice.Read(buffer)) != 0) { cancellation.ThrowIfCancellationRequested(); digest.AppendData(buffer, 0, read); }
                 string id = entry.Name.Split('.')[0]; byte[] hash = digest.GetHashAndReset();
-                if (id.Length != 32 || !Convert.ToHexString(hash).StartsWith(id, StringComparison.OrdinalIgnoreCase) || !contents.TryAdd(id, (entry.Size, hash, nca.Header.ContentType)))
+                if (id.Length != 32 || !Convert.ToHexString(hash).StartsWith(id, StringComparison.OrdinalIgnoreCase) || !contents.TryAdd(id, (entry.Size, hash, nca.Header.ContentType, nca.Header.TitleId)))
                     throw new InvalidDataException("Invalid NCA content identity.");
             }
             NszPackage package = NszContentManifest.SelectPackage(manifests);
+            NszContentManifest.ValidateIncludedNcas(manifests[0], metadataIds.Single(), contents.Keys);
             foreach (var item in manifests[0].Contents)
             {
                 cancellation.ThrowIfCancellationRequested();
                 if (!contents.TryGetValue(item.ContentId, out var actual) || actual.Size != item.Size || !actual.Hash.AsSpan().SequenceEqual(item.Hash) ||
-                    !NszContentManifest.ContentTypeMatches(item.Type, (byte)actual.Type))
+                    !NszContentManifest.ContentTypeMatches(item.Type, (byte)actual.Type) ||
+                    !NszContentManifest.TitleMatches(package, item.IdOffset, actual.TitleId))
                     throw new InvalidDataException("CNMT referenced content is missing or inconsistent.");
             }
             byte required = package.Kind == NszPackageKind.AddOnContent ? (byte)2 : (byte)1;

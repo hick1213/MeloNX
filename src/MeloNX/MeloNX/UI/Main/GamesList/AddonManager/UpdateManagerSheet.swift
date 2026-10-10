@@ -242,16 +242,10 @@ struct UpdateManagerSheet: View {
                     return
                 }
                 ownsNSZImport = true
-                ryujinxController.beginNSZImport(urls: urls, intent: .update(applicationID: applicationID)) { result in
-                    ownsNSZImport = false
-                    guard case .success(let files) = result else { return }
-                    do {
-                        for file in files { try NSZAddonRegistration.update(file, applicationID: applicationID) }
-                        loadJSON(); ryujinxController.loadGames()
-                    } catch {
-                        AppAlerts.showSyncAlert(title: "Update Registration Failed", message: "The converted NSP was kept. \(error.localizedDescription)")
-                    }
-                }
+                ryujinxController.beginNSZImport(urls: urls, intent: .update(applicationID: applicationID), onImported: { file in
+                    try NSZAddonRegistration.update(file, applicationID: applicationID)
+                    loadJSON(); ryujinxController.loadGames()
+                }) { _ in ownsNSZImport = false }
                 return
             }
             var newUpdates: [UpdateItem] = []
