@@ -33,4 +33,12 @@ if MELONX_DOTNET="$TASK_TMP/missing-sdk" bash "$ROOT/distribution/ios/build.sh" 
   echo 'FAIL: missing explicitly selected SDK must fail' >&2
   exit 1
 fi
-printf 'PASS: selected SDK arguments and missing-path rejection\n'
+printf '<configuration/>\n' > "$TASK_TMP/config with spaces.xml"
+MELONX_TEST_ARGS="$TASK_TMP/args" MELONX_DOTNET="$TASK_TMP/sdk" MELONX_NUGET_CONFIG="$TASK_TMP/config with spaces.xml" bash "$ROOT/distribution/ios/build.sh" > "$TASK_TMP/config-output" 2>&1
+printf '%s\n' '--configfile' "$TASK_TMP/config with spaces.xml" >> "$TASK_TMP/expected"
+cmp "$TASK_TMP/args" "$TASK_TMP/expected"
+if MELONX_TEST_ARGS="$TASK_TMP/args" MELONX_DOTNET="$TASK_TMP/sdk" MELONX_NUGET_CONFIG="$TASK_TMP/missing-config" bash "$ROOT/distribution/ios/build.sh" > "$TASK_TMP/missing-config-output" 2>&1; then
+  echo 'FAIL: missing explicitly selected config must fail' >&2
+  exit 1
+fi
+printf 'PASS: selected SDK/config arguments and missing-path rejection\n' 

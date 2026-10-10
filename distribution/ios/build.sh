@@ -23,4 +23,12 @@ if [ -z "$DOTNET" ] || [ ! -x "$DOTNET" ]; then
   exit 1
 fi
 
-"$DOTNET" publish -c Release -r ios-arm64 -p:ExtraDefineConstants=DISABLE_UPDATER src/Ryujinx.Library --self-contained true
+publish_args=(publish -c Release -r ios-arm64 -p:ExtraDefineConstants=DISABLE_UPDATER src/Ryujinx.Library --self-contained true)
+if [ -n "${MELONX_NUGET_CONFIG:-}" ]; then
+  if [ ! -f "$MELONX_NUGET_CONFIG" ] || [ ! -r "$MELONX_NUGET_CONFIG" ]; then
+    echo "NuGet configuration is not readable: $MELONX_NUGET_CONFIG" >&2
+    exit 1
+  fi
+  publish_args+=(--configfile "$MELONX_NUGET_CONFIG")
+fi
+"$DOTNET" "${publish_args[@]}"
