@@ -1,14 +1,9 @@
 #!/usr/bin/env bash
 set -e
 
-[ -f "$HOME/.zshrc" ] && source "$HOME/.zshrc" || true
-[ -f "$HOME/.zprofile" ] && source "$HOME/.zprofile" || true
-[ -f "$HOME/.bash_profile" ] && source "$HOME/.bash_profile" || true
-[ -f "$HOME/.bashrc" ] && source "$HOME/.bashrc" || true
-
 export PATH="/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$PATH"
 
-DOTNET=$(command -v dotnet || true)
+DOTNET="${MELONX_DOTNET:-$(command -v dotnet || true)}"
 
 if [ -z "$DOTNET" ]; then
   for candidate in \
@@ -23,9 +18,9 @@ if [ -z "$DOTNET" ]; then
   done
 fi
 
-if [ -z "$DOTNET" ]; then
-  echo "dotnet not found"
+if [ -z "$DOTNET" ] || [ ! -x "$DOTNET" ]; then
+  echo "dotnet not found or not executable: $DOTNET" >&2
   exit 1
 fi
 
-dotnet publish -c Release -r ios-arm64 -p:ExtraDefineConstants=DISABLE_UPDATER src/Ryujinx.Library --self-contained true
+"$DOTNET" publish -c Release -r ios-arm64 -p:ExtraDefineConstants=DISABLE_UPDATER src/Ryujinx.Library --self-contained true
