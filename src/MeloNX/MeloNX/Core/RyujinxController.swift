@@ -193,8 +193,13 @@ class RyujinxController: ObservableObject {
     
     
     
+    var canBeginPackageImport: Bool {
+        if case .started = isRunning { return false }
+        return !emulationThreadActive && !NSZImportCoordinator.shared.isBusy && BuiltInJITCoordinator.shared.canRetry
+    }
+
     func startGame(_ game: GameInfo) {
-        guard !emulationThreadActive, !isRunning.hasStarted() else { return }
+        guard !NSZImportCoordinator.shared.isBusy, !emulationThreadActive, !isRunning.hasStarted() else { return }
         
         loadConfig()
         
@@ -397,7 +402,7 @@ class RyujinxController: ObservableObject {
             }
             
             for case let fileURL as URL in enumerator {
-                guard GameFileType.isSupported(fileExtension: fileURL.pathExtension) else { continue }
+                guard GameFileType.isRunnable(fileExtension: fileURL.pathExtension) else { continue }
                 
                 do {
                     let handle = try FileHandle(forReadingFrom: fileURL)
@@ -462,7 +467,7 @@ class RyujinxController: ObservableObject {
             }
             
             for case let fileURL as URL in enumerator {
-                guard GameFileType.isSupported(fileExtension: fileURL.pathExtension) else { continue }
+                guard GameFileType.isRunnable(fileExtension: fileURL.pathExtension) else { continue }
                 
                 do {
                     let handle = try FileHandle(forReadingFrom: fileURL)

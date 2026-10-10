@@ -10,6 +10,7 @@ import Foundation
 enum GameFileType: String, CaseIterable {
     case nro
     case nsp
+    case nsz // Import only; normalized to NSP before metadata or launch.
     case xci
     case nca
     case pfs0
@@ -18,5 +19,8 @@ enum GameFileType: String, CaseIterable {
     
     static func isSupported(fileExtension: String) -> Bool {
         return GameFileType.allCases.contains { $0.rawValue.lowercased() == fileExtension.lowercased() }
+    }
+    static func isRunnable(fileExtension: String) -> Bool {
+        isSupported(fileExtension: fileExtension) && fileExtension.lowercased() != "nsz"
     }
 }

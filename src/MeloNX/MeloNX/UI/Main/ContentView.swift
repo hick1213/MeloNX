@@ -29,6 +29,7 @@ struct ContentView: View {
     @EnvironmentObject var themeManager: ThemeManager
     @StateObject public var nativeSettingsManager = NativeSettingsManager.shared
     @StateObject var controllerManager: ControllerManager = .shared
+    @ObservedObject private var nszImport = NSZImportCoordinator.shared
     @State private var selectedTab: Tab = .games
     @Environment(\.scenePhase) var scenePhase
     @Environment(\.appTheme) var theme
@@ -44,7 +45,11 @@ struct ContentView: View {
                 .tag(Tab.settings)
         }
         .accentColor(theme.accent.primary)
-        .onOpenURL(perform: { AppEnvironment.handleDeepLink($0, ryujinxController: ryujinxController) } )
+        .onOpenURL { url in
+            if url.isFileURL, url.pathExtension.lowercased() == "nsz" {
+                ryujinxController.handleRunningGame(result: .success([url]))
+            } else { AppEnvironment.handleDeepLink(url, ryujinxController: ryujinxController) }
+        }
         .onAppear {
             NativeSettingsManager.setShared()
 #if DEBUG
@@ -154,6 +159,10 @@ struct ContentView: View {
                     }
             }
         }
+        .sheet(isPresented: Binding(get: { nszImport.isBusy }, set: { if !$0 { nszImport.cancel() } })) {
+            NSZImportProgressView()
+        }
+        .onDisappear { if nszImport.isBusy { nszImport.cancel() } }
         .onChange(of: scenePhase) { newPhase in
             switch newPhase {
             case .active:
@@ -170,6 +179,7 @@ struct ContentView: View {
                 }
                 break
             case .background:
+                nszImport.cancel()
                 if ryujinxController.isRunning.isRunning(), !ryujinxController.wasManuallyPaused {
                     ryujinxController.isPaused = true
                 }

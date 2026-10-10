@@ -48,6 +48,7 @@ class FileImporterManager: NSObject, ObservableObject, UIDocumentPickerDelegate 
     ) {
         self.currentCompletion = { result in
             Task { @MainActor in
+                // Async importers must acquire their own source lease inside this callback.
                 completion(result)
                 self.stopAccessingSecurityScopedResources()
             }

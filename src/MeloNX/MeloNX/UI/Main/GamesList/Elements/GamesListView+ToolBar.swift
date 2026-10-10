@@ -38,7 +38,7 @@ extension GamesListView {
     
     private var addGameButton: some View {
         Button {
-            FileImporterManager.shared.importFiles(types: [.nsp, .xci, .item]) { result in
+            FileImporterManager.shared.importFiles(types: [.nsp, .xci, .nsz, .item], allowMultiple: true) { result in
                 ryujinxController.handleAddingGame(result: result)
             }
         } label: {
@@ -56,7 +56,7 @@ extension GamesListView {
             Divider()
             
             Button {
-                FileImporterManager.shared.importFiles(types: [.nsp, .xci, .item]) { result in
+                FileImporterManager.shared.importFiles(types: [.nsp, .xci, .nsz, .item]) { result in
                     ryujinxController.handleRunningGame(result: result)
                 }
             } label: {

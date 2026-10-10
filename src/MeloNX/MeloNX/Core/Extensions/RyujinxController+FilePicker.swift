@@ -8,12 +8,32 @@
 import Foundation
 import UIKit
 import Combine
+import MeloNXImportCore
 
 extension RyujinxController {
+    func beginNSZImport(urls: [URL], intent: NSZImportIntent,
+                        completion: @escaping @MainActor (Result<[NSZImportedFile], Error>) -> Void) {
+        guard canBeginPackageImport, !urls.isEmpty, urls.allSatisfy({ NSZImportRouting.isNSZ(extension: $0.pathExtension) }) else {
+            let error = NSZNativeFailure(code: "busy")
+            AppAlerts.showSyncAlert(title: "NSZ Import", message: "Exit the game and finish any active operation before importing NSZ files.")
+            completion(.failure(error)); return
+        }
+        NSZImportCoordinator.shared.begin(urls: urls, target: intent.target, kind: intent.kind,
+                                         applicationID: intent.applicationID, completion: completion)
+    }
     public func handleRunningGame(result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
             guard let url = urls.first else {
+                return
+            }
+            if NSZImportRouting.isNSZ(extension: url.pathExtension) {
+                beginNSZImport(urls: [url], intent: .open) { [weak self] result in
+                    if case .success(let files) = result, let file = files.first {
+                        self?.loadGames()
+                        self?.handleRunningGame(result: .success([URL(fileURLWithPath: file.path)]))
+                    }
+                }
                 return
             }
             
@@ -39,6 +59,16 @@ extension RyujinxController {
         switch result {
         case .success(let urls):
             guard let url = urls.first else {
+                return
+            }
+            if urls.contains(where: { NSZImportRouting.isNSZ(extension: $0.pathExtension) }) {
+                guard urls.allSatisfy({ NSZImportRouting.isNSZ(extension: $0.pathExtension) }) else {
+                    AppAlerts.showSyncAlert(title: "NSZ Import", message: "Select NSZ files separately from other game formats.")
+                    return
+                }
+                beginNSZImport(urls: urls, intent: .library) { [weak self] result in
+                    if case .success = result { self?.loadGames() }
+                }
                 return
             }
             
