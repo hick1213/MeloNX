@@ -63,7 +63,9 @@ MeloNX/Saves/v1/<TitleID:16hex>/snapshots/<generation-UUID>/
 
 “恢复”是目标逻辑 filesystem 的精确替换：通过 LibHac 清理其旧文件/目录、按快照重建文件和空目录、明确设置文件长度，禁止残留旧文件/较长文件尾部；只处理这次快照列出的逻辑记录及合法创建的已登记副作用，不删除其他 index。备份回滚使用同样的精确替换规则。
 
-多个记录不具备跨记录原子 Commit。任何失败和重启恢复都保守回滚全部 `mayHaveChanged` 记录，包括 Commit 成功但 journal 更新前终止的情况；原来不存在的新记录仅能通过合法 LibHac 删除 API 回滚。回滚失败保留 journal/备份、阻止启动该游戏，显示恢复工具入口，不宣称完成。应用重启先扫描 journal，完成恢复/回滚前不允许挂载该游戏。所有文件句柄关闭后才报告恢复完成。
+多个记录不具备跨记录原子 Commit。journal 预先包含成功后要写入的绑定和 parent 更新意图。全部记录 Commit 且句柄关闭后，必须先持久写入整次事务 `completed` 标记，再幂等持久补齐绑定/parent，最后才向 UI 报告成功。写完成标记失败属于未完成事务，必须回滚。
+
+任何失败和重启扫描到的未完成事务，都保守回滚全部 `mayHaveChanged` 记录，包括 Commit 成功但 journal 更新前终止的情况；原来不存在的新记录仅能通过合法 LibHac 删除 API 回滚。完成事务不回滚；若进程在 completed 后、绑定更新前终止，重启从 journal 幂等补齐绑定/parent。未完成事务保留原绑定。回滚失败保留 journal/备份、阻止启动该游戏，显示恢复工具入口，不宣称完成。应用重启先扫描 journal，完成恢复/回滚或完成事务的绑定补齐前不允许挂载该游戏。
 
 本地持久路径：`Documents/SaveSync/v1/staging/<UUID>`、`backups/<TitleID>/<UUID>`、`transactions/<UUID>.json`。所有清理只处理本任务拥有的 staging；保留成功恢复前的备份。备份和暂存按程序规则管理，不能遍历删除其他 Documents 内容。
 
@@ -90,7 +92,7 @@ UI 关闭、切后台或取消：在修改本地存档前可以取消并保留�
 
 Foundation-only Swift save sync core 测试 manifest、版本图、账户变化、状态机/租约和取消；UIKit/cloud/native adapters 放入 app。C# SaveSync bridge 提供受约束 JSON/C ABI、拥有任务生命周期和异常边界，不复用 NSZ 的包分类；共享文件安全/operation gate 时只提取有真实两方需求的最小接口。
 
-测试覆盖：Account/Device/多 index 映射、不同 SaveDataId 同一逻辑键、默认用户及显式跨 UID 绑定（成功/失败后路径/parent 一致）、零文件/空目录、恶意 manifest、短读、hash/length mismatch、无空间、上传待确认、断网/账户切换、并行启动被拒绝、每个恢复阶段失败与回滚、创建/Commit 成功但 journal 更新前终止、journal 持久化失败、进程中断后恢复、旧文件/长文件尾部/文件变目录精确替换、不同设备同时上传的多个分支和已知未完整后继阻止自动选择。不用“写进本地 iCloud 容器”替代真实云端验证。
+测试覆盖：Account/Device/多 index 映射、不同 SaveDataId 同一逻辑键、默认用户及显式跨 UID 绑定（成功/失败后路径/parent 一致）、零文件/空目录、恶意 manifest、短读、hash/length mismatch、无空间、上传待确认、断网/账户切换、并行启动被拒绝、每个恢复阶段失败与回滚、创建/Commit 成功但 journal 更新前终止、最终 Commit/completed 标记/绑定更新之间的中断、journal 持久化失败、进程中断后恢复、旧文件/长文件尾部/文件变目录精确替换、不同设备同时上传的多个分支和已知未完整后继阻止自动选择。不用“写进本地 iCloud 容器”替代真实云端验证。
 
 真机验收分层：
 1. 重新生成含 CloudDocuments 的 profile，验证 app/container entitlement 与实际签名一致，保持原 app/container 数据并原位安装 hick 手机；helper 保留原必要权限。
