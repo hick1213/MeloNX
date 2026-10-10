@@ -11,6 +11,7 @@ import MeloNXImportCore
     private var task: Task<Void, Never>?
     private var poller: Task<Void, Never>?
     private(set) var sourceName = ""
+    private(set) var packageKind = 0
     var isBusy: Bool { task != nil }
     var phase: NSZImportPhase { engine.phase }
     var completedBytes: Int64 { engine.completedBytes }
@@ -30,6 +31,7 @@ import MeloNXImportCore
             return
         }
         let leases = urls.map { NSZSourceLease(url: $0) }
+        packageKind = kind
         let ids = urls.map { _ in UUID() }
         let workers = zip(urls, zip(ids, leases)).map { url, item in
             NSZNativeWorker(request: NSZNativeRequest(id: item.0, source: url.path, targetRoot: target.path,
@@ -53,7 +55,7 @@ import MeloNXImportCore
             poller?.cancel(); poller = nil; self.worker = nil; operationID = nil; task = nil
             objectWillChange.send()
             if let result { completion(.success(result)) }
-            else if engine.phase == .failed {
+            else if !Task.isCancelled, engine.phase == .failed {
                 let error = engine.error ?? NSZNativeFailure(code: "import_failed")
                 AppAlerts.showSyncAlert(title: "NSZ Import Failed", message: error.localizedDescription)
                 completion(.failure(error))

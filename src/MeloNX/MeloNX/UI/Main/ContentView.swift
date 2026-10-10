@@ -159,7 +159,7 @@ struct ContentView: View {
                     }
             }
         }
-        .sheet(isPresented: Binding(get: { nszImport.isBusy }, set: { if !$0 { nszImport.cancel() } })) {
+        .sheet(isPresented: Binding(get: { nszImport.isBusy && nszImport.packageKind == 0 }, set: { if !$0 { nszImport.cancel() } })) {
             NSZImportProgressView()
         }
         .onDisappear { if nszImport.isBusy { nszImport.cancel() } }

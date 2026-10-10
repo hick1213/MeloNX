@@ -15,6 +15,8 @@ struct DLCManagerSheet: View {
     var game: GameInfo?
     @State private var jsonURL: URL? = nil
     @Environment(\.dismiss) var dismiss
+    @ObservedObject private var nszImport = NSZImportCoordinator.shared
+    @State private var ownsNSZImport = false
     
     class DLCItem: Identifiable, ObservableObject {
         let id = UUID()
@@ -66,6 +68,9 @@ struct DLCManagerSheet: View {
             }
             .onAppear {
                 loadData()
+            }
+            .sheet(isPresented: Binding(get: { ownsNSZImport && nszImport.isBusy && nszImport.packageKind == 2 }, set: { if !$0 { nszImport.cancel() } })) {
+                NSZImportProgressView()
             }
         }
     }
@@ -222,6 +227,25 @@ struct DLCManagerSheet: View {
     private func handleFileImport(result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
+            if urls.contains(where: { $0.pathExtension.lowercased() == "nsz" }) {
+                guard let game, let applicationID = UInt64(game.titleId, radix: 16),
+                      urls.allSatisfy({ $0.pathExtension.lowercased() == "nsz" }) else {
+                    AppAlerts.showSyncAlert(title: "NSZ Import", message: "Select NSZ DLCs separately from other formats.")
+                    return
+                }
+                ownsNSZImport = true
+                ryujinxController.beginNSZImport(urls: urls, intent: .dlc(applicationID: applicationID)) { result in
+                    ownsNSZImport = false
+                    guard case .success(let files) = result else { return }
+                    do {
+                        for file in files { try NSZAddonRegistration.dlc(file, applicationID: applicationID) }
+                        loadJSON(); ryujinxController.loadGames()
+                    } catch {
+                        AppAlerts.showSyncAlert(title: "DLC Registration Failed", message: "The converted NSP was kept. \(error.localizedDescription)")
+                    }
+                }
+                return
+            }
             var newDLCs: [DLCItem] = []
             
             for selectedURL in urls {
