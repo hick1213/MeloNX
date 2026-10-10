@@ -8,9 +8,9 @@ Madeira's built-in StikJIT approach. They approved the conversational scope on
 independent helper extension, automatic acquisition before gameplay, progress,
 errors and retry, and an update of 房栋的iPad that preserves application data.
 
-This document is the written design for review. Product implementation and
-dependency installation have not started. Written-design review is the next
-workflow gate, followed by a separately reviewable implementation plan.
+The user approved this written design on 2026-10-10. Product implementation and
+dependency installation have not started. The separately reviewable implementation
+plan is the next workflow gate; its execution method has not yet been selected.
 
 ## Current evidence
 
