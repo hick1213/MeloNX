@@ -45,3 +45,13 @@ final class JITMessageTests: XCTestCase {
         XCTAssertThrowsError(try JITReply.decode(JSONEncoder().encode(wrong), expectedID: id))
     }
 }
+
+#if DEBUG
+extension JITMessageTests {
+    func testDiagnosticWaitCarriesNoCredentialsOrTarget() throws {
+        let request = JITRequest(operationID: UUID(), operation: .diagnosticWait)
+        XCTAssertNoThrow(try request.validated())
+        XCTAssertThrowsError(try JITRequest(operationID: UUID(), operation: .diagnosticWait, targetPID: 1).validated())
+    }
+}
+#endif

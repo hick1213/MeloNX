@@ -13,6 +13,23 @@
 #include <stdbool.h>
 #include <signal.h>
 #include <stdint.h>
+#include "MeloNXRPPairing.h"
+#include "../Dependencies/BreakpointJIT.framework/Headers/BreakJIT.h"
+#include <sys/sysctl.h>
+#include <sys/proc.h>
+extern int csops(pid_t pid, unsigned int ops, void *useraddr, size_t usersize);
+static inline int melonx_jit_code_debugged(void) {
+    uint32_t flags = 0;
+    return csops(getpid(), 0, &flags, sizeof(flags)) == 0 && (flags & 0x10000000u) != 0;
+}
+// -1 is unknown, never treated as an untraced process.
+static inline int melonx_jit_tracing_state(void) {
+    int mib[4] = { CTL_KERN, KERN_PROC, KERN_PROC_PID, getpid() };
+    struct kinfo_proc info = {0};
+    size_t length = sizeof(info);
+    if (sysctl(mib, 4, &info, &length, NULL, 0) != 0 || length == 0) return -1;
+    return (info.kp_proc.p_flag & P_TRACED) != 0;
+}
 #include "Models/Options/NativeOptions.h" 
 #include <IOKit/IOKitLib.h>
 

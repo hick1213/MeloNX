@@ -45,13 +45,18 @@ struct ContentView: View {
         }
         .accentColor(theme.accent.primary)
         .onOpenURL(perform: { AppEnvironment.handleDeepLink($0, ryujinxController: ryujinxController) } )
-        .onAppear { NativeSettingsManager.setShared() }
+        .onAppear {
+            NativeSettingsManager.setShared()
+#if DEBUG
+            if JITAcquisitionDiagnostic.requested { selectedTab = .settings }
+#endif
+        }
         .task {
             if ryujinxController.lastGameLaunched == nil {
                 EnableJIT.enableJIT(nativeSettingsManager.jitProvider(JITProvider.disabled).value)
             }
             
-            _ = ryujinxController.attemptToMapDualMapping()
+            _ = await BuiltInJITCoordinator.shared.enableExternal()
             
             ryujinxController.loadGames()
             
@@ -157,7 +162,7 @@ struct ContentView: View {
                         ryujinxController.isPaused = false
                     }
                 } else {
-                    _ = ryujinxController.attemptToMapDualMapping()
+                    Task { _ = await BuiltInJITCoordinator.shared.enableExternal() }
                 }
             case .inactive:
                 if ryujinxController.isRunning.isRunning(), !ryujinxController.wasManuallyPaused {

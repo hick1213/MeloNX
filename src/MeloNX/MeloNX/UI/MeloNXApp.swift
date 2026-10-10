@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import MeloNXJITCore
 import SDL3
 import AVFoundation
 
@@ -71,6 +72,16 @@ struct MeloNXApp: App {
     
     @AppStorage("hasSetupFinished") var hasSetupFinished: Bool = false
     @AppStorage("lastAppversion") var lastAppversion: Data = Data()
+#if DEBUG
+    @State private var jitDiagnosticFinished = false
+#endif
+
+    private var shouldShowSetup: Bool {
+#if DEBUG
+        if FirmwareImportDiagnostic.requested || JITAcquisitionDiagnostic.requested { return false }
+#endif
+        return !hasSetupFinished
+    }
     
     init() {
         SDL_SetMainReady()
@@ -84,7 +95,31 @@ struct MeloNXApp: App {
     
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            Group {
+#if DEBUG
+                if JITAcquisitionDiagnostic.requested {
+                    if jitDiagnosticFinished {
+                        ContentView()
+                    } else {
+                        Text("正在检查内置 JIT…")
+                            .task {
+                                await JITAcquisitionDiagnostic.run()
+                                jitDiagnosticFinished = true
+                            }
+                    }
+                } else if FirmwareImportDiagnostic.requested {
+                    Text("正在安装 22.5.0 固件…")
+                        .task { await FirmwareImportDiagnostic.run() }
+                } else if JITCancellationDiagnostic.requested {
+                    Text("Checking JIT helper cancellation…")
+                        .task { await JITCancellationDiagnostic.run() }
+                } else if ProcessInfo.processInfo.arguments.contains("--jit-pairing-setup") {
+                    NavigationView { BuiltInJITSetupView() }
+                } else { ContentView() }
+#else
+                ContentView()
+#endif
+            }
                 .environmentObject(ryujinxController)
                 .environmentObject(themeManager)
                 .withAppTheme()
@@ -93,14 +128,14 @@ struct MeloNXApp: App {
                     
                     configureAudioSession()
                     
-                    let versionNumber = lastAppversion.withUnsafeBytes { $0.load(as: Float.self) }
+                    let versionNumber = StoredAppVersion.decode(lastAppversion)
                     
                     if versionNumber < Float(Bundle.main.versionNumber) ?? .zero {
                         lastAppversion = encodeFloatToData(Float(Bundle.main.versionNumber) ?? .zero)
                          hasSetupFinished = false
                     }
                 }
-                .sheet(isPresented: .constant(!hasSetupFinished)) {
+                .sheet(isPresented: .constant(shouldShowSetup)) {
                     SetupView {
                         hasSetupFinished = true
                         ryujinxController.loadGames()

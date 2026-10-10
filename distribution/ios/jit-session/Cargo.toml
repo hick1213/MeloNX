@@ -1,0 +1,15 @@
+[package]
+name = "melonx_jit_session"
+version = "0.1.0"
+edition = "2024"
+license = "MPL-2.0"
+publish = false
+[lib]
+crate-type = ["staticlib", "rlib"]
+[dependencies]
+tokio = { version = "1", features = ["rt", "net", "sync", "macros", "time", "io-util"] }
+idevice = { version = "=0.1.68", default-features = false, features = ["remote_pairing", "ring", "tunnel_tcp_stack", "rsd", "debug_proxy", "dvt"] }
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1

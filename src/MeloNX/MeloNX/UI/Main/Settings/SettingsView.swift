@@ -31,6 +31,7 @@ struct SettingsView: View {
     @State private var showOSIcon = true
     @State private var showingAppIconSwitcher = false
     @State private var showingMemoryLimit = false
+    @State private var showingBuiltInJIT = false
     @State private var showingThemePicker = false
     @State private var showingKeyboardConfig = false
     @FocusState private var isArgumentsKeyboardVisible: Bool
@@ -177,6 +178,9 @@ struct SettingsView: View {
             } else {
                 iPadSettings
             }
+        }
+        .sheet(isPresented: $showingBuiltInJIT) {
+            NavigationView { BuiltInJITSetupView() }.withAppTheme()
         }
         .onAppear { resolveConfiguredNetworkInterface() }
         .onDisappear { ryujinxController.saveConfig() }
@@ -384,6 +388,7 @@ struct SettingsView: View {
     
     private var jitRow: some View {
         HStack(spacing: 6) {
+            Button { showingBuiltInJIT = true } label: { Image(systemName: "cpu") }
             Circle()
                 .fill(ryujinxController.isJITEnabled ? Color.green : Color.red)
                 .frame(width: 8, height: 8)

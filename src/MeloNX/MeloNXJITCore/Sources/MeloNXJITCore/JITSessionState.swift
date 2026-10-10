@@ -43,7 +43,7 @@ public struct JITSessionState: Sendable {
         phase = .stopping
     }
 
-    public mutating func complete(id: UUID, mapped: Bool, helperEnded: Bool, tracing: Bool?) {
+    public mutating func complete(id: UUID, mapped: Bool, helperEnded: Bool, tracing: Bool?, preparedOnly: Bool = false) {
         guard activeID == id else { return }
         guard helperEnded, tracing == false else {
             phase = .stopping
@@ -55,7 +55,7 @@ public struct JITSessionState: Sendable {
         } else if mapped {
             phase = .ready
         } else {
-            phase = .failed
+            phase = phase == .needsSetup ? .needsSetup : (preparedOnly ? .idle : .failed)
             pendingLaunchID = nil
         }
     }

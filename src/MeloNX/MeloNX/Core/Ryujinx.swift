@@ -55,7 +55,7 @@ final class Ryujinx {
         MeloNX.set_gamepad_motion_axis(id, Int32(motionType), axis.x, axis.y, axis.z)
     }
 
-    static func initDualMapping() -> Bool {
+    nonisolated static func initDualMapping() -> Bool {
         MeloNX.init_dualmapping()
     }
     
@@ -63,13 +63,13 @@ final class Ryujinx {
         MeloNX.load_keyset()
     }
     
-    static var installedFirmwareVersion: String {
+    nonisolated static var installedFirmwareVersion: String {
         let firmware = MeloNX.installed_firmware_version()
         defer { MeloNX.free_firmware_version(firmware) }
         return String(cString: firmware)
     }
     
-    static func installFirmware(at path: String) throws {
+    nonisolated static func installFirmware(at path: String) throws {
         let error = path.withCString {
             MeloNX.install_firmware($0)
         }
@@ -407,16 +407,16 @@ fileprivate func stop_emulation()
 fileprivate func load_keyset()
 
 @_silgen_name("installed_firmware_version")
-fileprivate func installed_firmware_version() -> UnsafePointer<CChar>
+nonisolated fileprivate func installed_firmware_version() -> UnsafePointer<CChar>
 
 @_silgen_name("free_firmware_version")
-fileprivate func free_firmware_version(_ versionPtr: UnsafePointer<CChar>)
+nonisolated fileprivate func free_firmware_version(_ versionPtr: UnsafePointer<CChar>)
 
 @_silgen_name("install_firmware")
-fileprivate func install_firmware(_ pathPtr: UnsafePointer<CChar>) -> UnsafePointer<CChar>?
+nonisolated fileprivate func install_firmware(_ pathPtr: UnsafePointer<CChar>) -> UnsafePointer<CChar>?
 
 @_silgen_name("init_dualmapping")
-fileprivate func init_dualmapping() -> Bool
+nonisolated fileprivate func init_dualmapping() -> Bool
 
 @_silgen_name("get_game_info")
 fileprivate func get_game_info(_ arg0: Int32, _ arg1: UnsafeMutablePointer<CChar>!) -> GameInfoC

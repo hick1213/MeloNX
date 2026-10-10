@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import MeloNXJITCore
 
 struct NoJITView: View {
     var game: GameInfo
@@ -14,6 +15,10 @@ struct NoJITView: View {
     @ObservedObject public var nativeSettingsManager = NativeSettingsManager.shared
     
     @State private var isJIT: Bool = false
+    @State private var requestID = UUID()
+    @State private var status = ""
+    @State private var attemptGeneration = 0
+    @State private var setup = false
     @State private var pulseAnimation: Bool = false
     
     var body: some View {
@@ -84,7 +89,10 @@ struct NoJITView: View {
             )
             
             
+            if !status.isEmpty { Text(status).font(.footnote).foregroundStyle(.secondary) }
+            Button("内置 JIT 设置") { setup = true }
             Button("Go Back") {
+                BuiltInJITCoordinator.shared.cancel(launchID: requestID)
                 ryujinxController.lastGameLaunched = nil
                 ryujinxController.isRunning = .stopped
             }
@@ -97,22 +105,33 @@ struct NoJITView: View {
         }
         .padding(24)
         .frame(maxWidth: 400)
-        .onAppear {
+        .sheet(isPresented: $setup, onDismiss: { attemptGeneration += 1 }) { NavigationView { BuiltInJITSetupView() }.withAppTheme() }
+        .task(id: attemptGeneration) {
             pulseAnimation = true
-            
-            EnableJIT.enableJIT(nativeSettingsManager.jitProvider(JITProvider.disabled).value)
-            
-            Task.detached {
-                while !jitEnabled() {
-                    try? await Task.sleep(nanoseconds: 200_000_000)
+            let coordinator = BuiltInJITCoordinator.shared
+            var ready = false
+            let provider = nativeSettingsManager.jitProvider(JITProvider.disabled).value
+            let preference = UserDefaults.standard.object(forKey: "preferBuiltInJIT") as? Bool
+            let useBuiltIn = JITCompatibilityPolicy.useBuiltIn(preference: preference, externalProviderSelected: provider != .disabled)
+            if useBuiltIn, coordinator.unavailableReason == nil {
+                guard (try? JITKeychainPairingStore.shared.load()) != nil else {
+                    status = "请先打开内置 JIT 设置，完成配对并连接 LocalDevVPN。"
+                    return
                 }
-                
-                await MainActor.run {
-                    withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                        ryujinxController.startGame(game)
-                    }
+                ready = await coordinator.enable(launchID: requestID)
+                status = coordinator.message
+            } else {
+                EnableJIT.enableJIT(nativeSettingsManager.jitProvider(JITProvider.disabled).value)
+                let deadline = ProcessInfo.processInfo.systemUptime + 60
+                while !Task.isCancelled && ProcessInfo.processInfo.systemUptime < deadline {
+                    if checkDebugged() { ready = await coordinator.enableExternal(); if ready { break } }
+                    do { try await Task.sleep(nanoseconds: 200_000_000) } catch { return }
                 }
+                if !ready { status = "外部 JIT 等待超时，可以返回后重试。" }
             }
+            guard ready, !Task.isCancelled else { return }
+            ryujinxController.startGame(game)
         }
+        .onDisappear { BuiltInJITCoordinator.shared.cancel(launchID: requestID) }
     }
 }

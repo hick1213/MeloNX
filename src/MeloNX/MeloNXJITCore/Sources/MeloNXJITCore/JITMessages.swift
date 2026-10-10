@@ -19,7 +19,13 @@ public enum JITValidationError: Error, LocalizedError {
     }
 }
 
-public enum JITOperation: String, Codable, Sendable { case prepare, enable, resetDDI }
+public enum JITOperation: String, Codable, Sendable {
+    case prepare, enable, resetDDI
+#if DEBUG
+    /// Development-only, isolated cancellation proof; no credentials or target allowed.
+    case diagnosticWait
+#endif
+}
 
 public struct JITRequest: Codable, Sendable {
     public static let itemKey = "melonx-jit-request"
@@ -28,14 +34,16 @@ public struct JITRequest: Codable, Sendable {
     public let operation: JITOperation
     public let targetPID: Int32?
     public let pairingData: Data?
+    public let rsdPort: UInt16?
 
     public init(version: Int = 1, operationID: UUID, operation: JITOperation,
-                targetPID: Int32? = nil, pairingData: Data? = nil) {
+                targetPID: Int32? = nil, pairingData: Data? = nil, rsdPort: UInt16? = nil) {
         self.version = version
         self.operationID = operationID
         self.operation = operation
         self.targetPID = targetPID
         self.pairingData = pairingData
+        self.rsdPort = rsdPort
     }
 
     public func validated() throws -> JITRequest {
@@ -45,15 +53,21 @@ public struct JITRequest: Codable, Sendable {
         }
         switch operation {
         case .enable:
+            guard rsdPort != 0 else { throw JITValidationError.unexpectedPayload }
             guard let pid = targetPID, pid > 0 else { throw JITValidationError.invalidPID }
             guard let pairingData else { throw JITValidationError.missingPairing }
             _ = try PairingRecord(validating: pairingData)
         case .prepare:
+            guard rsdPort != 0 else { throw JITValidationError.unexpectedPayload }
             guard targetPID == nil else { throw JITValidationError.unexpectedPayload }
             guard let pairingData else { throw JITValidationError.missingPairing }
             _ = try PairingRecord(validating: pairingData)
+#if DEBUG
+        case .diagnosticWait:
+            guard targetPID == nil, pairingData == nil, rsdPort == nil else { throw JITValidationError.unexpectedPayload }
+#endif
         case .resetDDI:
-            guard targetPID == nil, pairingData == nil else { throw JITValidationError.unexpectedPayload }
+            guard targetPID == nil, pairingData == nil, rsdPort == nil else { throw JITValidationError.unexpectedPayload }
         }
         return self
     }

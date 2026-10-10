@@ -187,3 +187,8 @@ distribution/macos/temp/
 distribution/macos/output/
 
 src/MeloNX/MeloNX.xcodeproj/project.xcworkspace/xcuserdata/*
+
+/src/MeloNX/MeloNX/Dependencies/libmelonx_rppairing.a
+
+# Pinned downloaded JIT framework
+src/MeloNX/JITDependencies/

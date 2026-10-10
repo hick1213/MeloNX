@@ -6,11 +6,12 @@
 //
 
 import Foundation
+import MeloNXJITCore
 import Darwin
 import MachO
 import Metal
 
-@_silgen_name("vm_remap") func vm_remap(
+@_silgen_name("vm_remap") nonisolated func vm_remap(
     _ target_task: mach_port_t,
     _ target_address: UnsafeMutablePointer<mach_vm_address_t>,
     _ size: mach_vm_size_t,
@@ -24,7 +25,7 @@ import Metal
     _ inheritance: vm_inherit_t
 ) -> kern_return_t
 
-@_silgen_name("vm_protect") func vm_protect(
+@_silgen_name("vm_protect") nonisolated func vm_protect(
     _ target_task: mach_port_t,
     _ address: mach_vm_address_t,
     _ size: mach_vm_size_t,
@@ -33,7 +34,7 @@ import Metal
 ) -> kern_return_t
 
 @_silgen_name("sys_icache_invalidate")
-func sys_icache_invalidate(_ start: UnsafeMutableRawPointer, _ size: Int)
+nonisolated func sys_icache_invalidate(_ start: UnsafeMutableRawPointer, _ size: Int)
 
 let CS_DEBUGGED = 0x10000000
 
@@ -41,26 +42,18 @@ let CS_DEBUGGED = 0x10000000
 func csops(pid: Int32, ops: Int32, useraddr: UnsafeMutableRawPointer?, usersize: Int32) -> Int32
 
 func jitEnabled() -> Bool {
-    if checkAppEntitlement("dynamic-codesigning") {
-        return allocateTest()
-    }
-    
-    if #available(iOS 19, *) {
-        return checkDebugged() && RyujinxController.attemptToMapDualMapping()
-    } else {
-        return checkDebugged() && allocateTest()
-    }
+    // Status reads never allocate memory or execute a breakpoint.
+    JITMappingWorker.shared.isReady && checkDebugged() && JITDebuggerProbe.snapshot().currentlyTraced == false
 }
 
 func checkDebugged() -> Bool {
-    var flags: Int = 0
     if checkAppEntitlement("dynamic-codesigning") {
         return true
     }
-    return csops(pid: getpid(), ops: 0, useraddr: &flags, usersize: Int32(MemoryLayout.size(ofValue: flags))) == 0 && (flags & Int(CS_DEBUGGED)) != 0
+    return JITDebuggerProbe.snapshot().codeSigningDebugged
 }
 
-func checkMemoryPermissions(at address: UnsafeRawPointer) -> Bool {
+nonisolated func checkMemoryPermissions(at address: UnsafeRawPointer) -> Bool {
     var region: vm_address_t = vm_address_t(UInt(bitPattern: address))
     var regionSize: vm_size_t = 0
     var info = vm_region_basic_info_64()
@@ -81,7 +74,7 @@ func checkMemoryPermissions(at address: UnsafeRawPointer) -> Bool {
     return info.protection & VM_PROT_EXECUTE != 0
 }
 
-func testDualMappedExecution() -> Bool {
+nonisolated func testDualMappedExecution() -> Bool {
     let pageSize = UInt(vm_page_size)
 
     let rawMmap = mmap(nil, Int(pageSize), PROT_READ | PROT_EXEC, MAP_ANONYMOUS | MAP_PRIVATE, -1, 0)
@@ -145,7 +138,7 @@ func testDualMappedExecution() -> Bool {
     return result == 42
 }
 
-func allocateTest() -> Bool {
+nonisolated func allocateTest() -> Bool {
     let pageSize = sysconf(_SC_PAGESIZE)
     let code: [UInt32] = [0x52800540, 0xD65F03C0]
     

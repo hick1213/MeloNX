@@ -168,7 +168,6 @@ class RyujinxController: ObservableObject {
         }
     }
     
-    private static var hasScript: Bool = false
     private var controllerManager: ControllerManager = .shared
     private var emulationThreadActive = false
     
@@ -546,14 +545,8 @@ class RyujinxController: ObservableObject {
         }
     }
     
-    static func attemptToMapDualMapping() -> Bool {
-        if hasScript { return true }
-        
-        hasScript = Ryujinx.initDualMapping()
-        
-        return hasScript
-    }
-    
+    static func attemptToMapDualMapping() -> Bool { JITMappingWorker.shared.isReady }
+
     func attemptToMapDualMapping() -> Bool {
         return Self.attemptToMapDualMapping()
     }
