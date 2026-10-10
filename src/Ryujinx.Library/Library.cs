@@ -85,6 +85,7 @@ namespace Ryujinx.Library
         private static nint nativeMetalLayer = nint.Zero;
         private static readonly Lock metalLayerLock = new();
         private static readonly Lock inputConfigurationLock = new();
+        private static readonly object importKeySetLock = new();
         private static KeyboardConfigNative? _keyboardConfig = null;
 
         [UnmanagedCallersOnly(EntryPoint = "main_ryujinx_sdl")]
@@ -207,7 +208,16 @@ namespace Ryujinx.Library
         [UnmanagedCallersOnly(EntryPoint = "load_keyset")]
         public static void ReloadKeySet() 
         {
-            _virtualFileSystem.ReloadKeySet();
+            lock (importKeySetLock) _virtualFileSystem.ReloadKeySet();
+        }
+
+        internal static KeySet SnapshotImportKeys()
+        {
+            lock (importKeySetLock)
+            {
+                if (_virtualFileSystem == null) throw new InvalidOperationException("The emulator must be initialized before importing.");
+                return Compression.NszPackageValidator.Snapshot(_virtualFileSystem.KeySet);
+            }
         }
 
         [UnmanagedCallersOnly(EntryPoint = "installed_firmware_version")]

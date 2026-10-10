@@ -23,6 +23,7 @@ public sealed class NszImportJob : IDisposable
     public ConversionProgress Progress { get { lock (_gate) return _progress; } }
     public bool HasEnded { get { lock (_gate) return _ended; } }
     public string? CommittedPath { get { lock (_gate) return _committedPath; } }
+    public Guid Id => _request.Id;
 
     public NszImportJob(NszImportRequest request, INszPackageValidator validator,
         NszLimits limits, Func<long> availableBytes) : this(request, validator, limits, availableBytes, new()) { }

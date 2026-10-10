@@ -9,6 +9,8 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="NUnit" />
     <PackageReference Include="NUnit3TestAdapter" />
+    <PackageReference Include="Ryujinx.LibHac" />
     <ProjectReference Include="../Ryujinx.Nsz/Ryujinx.Nsz.csproj" />
+    <Compile Include="../Ryujinx.Library/Compression/NszPackageValidator.cs" Link="Production/NszPackageValidator.cs" />
   </ItemGroup>
 </Project>
