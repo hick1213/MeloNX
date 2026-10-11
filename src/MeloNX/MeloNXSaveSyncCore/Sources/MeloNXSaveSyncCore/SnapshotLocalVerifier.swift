@@ -3,6 +3,10 @@ import CryptoKit
 import Darwin
 
 public enum SnapshotLocalVerifier {
+    public static func verifyAsync(root: URL, snapshot: SaveSnapshot) async throws -> Set<String> {
+        let worker = Task.detached(priority: .utility) { try verify(root: root, snapshot: snapshot) }
+        return try await withTaskCancellationHandler { try await worker.value } onCancel: { worker.cancel() }
+    }
     public static func digest(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
     public static func contained(_ root: URL, _ relative: String) throws -> URL {
         try SnapshotPaths.validate(relative)

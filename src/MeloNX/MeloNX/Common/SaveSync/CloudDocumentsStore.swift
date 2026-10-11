@@ -81,11 +81,21 @@ actor CloudDocumentsStore: CloudSaveStore {
             }
         }
         try await check(identity)
+        if publications.count >= 64 { publications.removeAll() }
         publications[snapshot.generation] = files
     }
     func waitUploaded(snapshot: SaveSnapshot, identity: CloudIdentity) async throws {
         let root = try await root(identity)
-        guard let files = publications[snapshot.generation] else { throw SaveSyncError.incompleteSnapshot }
+        let files: Set<String>
+        if let published = publications[snapshot.generation] { files = published }
+        else {
+            // A private queued-upload receipt survives process death. Rebuild
+            // the expected file set, then confirm every upload flag again.
+            do {
+                try await materialize(snapshot, root: root, identity: identity, deadline: Date().addingTimeInterval(30))
+                files = try SnapshotLocalVerifier.verify(root: root, snapshot: snapshot)
+            } catch SaveSyncError.incompleteSnapshot { throw SaveSyncError.queued }
+        }
         try await wait(files: files, root: root, identity: identity, direction: .upload)
         try await check(identity)
         publications.removeValue(forKey: snapshot.generation)

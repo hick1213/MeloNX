@@ -82,8 +82,9 @@ nonisolated final class NativeSaveWorker: SaveNativeService, @unchecked Sendable
         guard data.count <= 65536 else { throw SaveSyncError.malformedSnapshot }
         var creationError: UnsafeMutablePointer<CChar>?
         let handle = String(decoding: data, as: UTF8.self).withCString { save_sync_create($0, &creationError) }
+        let creationCode = creationError.map { String(cString: $0) }
         if let creationError { save_sync_string_free(creationError) }
-        guard let handle else { throw SaveSyncError.restoreFailed }
+        guard let handle else { throw SaveSyncError.fromNative(code: creationCode) }
         guard lifetime.install(handle, stop: { save_sync_request_stop($0) }) else { save_sync_free(handle); throw SaveSyncError.restoreFailed }
         let status = Int(save_sync_run(handle))
         let resultData = lifetime.finish { handle -> Data? in
@@ -96,7 +97,7 @@ nonisolated final class NativeSaveWorker: SaveNativeService, @unchecked Sendable
         let result = try JSONDecoder().decode(SaveResultWire.self, from: resultData)
         guard result.version == 1, result.id == request.id, result.status == status else { throw SaveSyncError.restoreFailed }
         _ = try result.result()
-        if status == 2 { throw SaveSyncError.restoreFailed }
+        if status == 2 { throw SaveSyncError.fromNative(code: result.errorCode) }
         return result
     }
     func describe(_ game: SaveGameSelection) async throws -> SaveNativeSelection {

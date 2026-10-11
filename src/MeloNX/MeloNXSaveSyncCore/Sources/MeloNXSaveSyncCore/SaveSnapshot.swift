@@ -2,7 +2,7 @@ import Foundation
 
 public enum SaveSyncError: Error, Sendable {
     case noSave, busy, cloudUnavailable, queued, quota, incompleteSnapshot, conflict
-    case identityMismatch, malformedSnapshot, restoreFailed, rollbackRequired
+    case identityMismatch, malformedSnapshot, restoreFailed, rollbackRequired, insufficientSpace
 }
 public enum SaveSlotType: String, Codable, Sendable { case account = "Account", device = "Device" }
 
