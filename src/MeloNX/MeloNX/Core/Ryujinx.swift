@@ -12,6 +12,7 @@ enum FirmwareInstallationError: Error {
 }
 
 final class Ryujinx {
+    static func beginEmulation() { begin_emulation() }
     static var emulationView: MTKView?
     
     static func initialize() {
@@ -399,6 +400,9 @@ fileprivate func set_keyboard_config(_ options: KeyboardConfigNative)
 
 @_silgen_name("initialize")
 fileprivate func initialize()
+
+@_silgen_name("begin_emulation")
+fileprivate func begin_emulation()
 
 @_silgen_name("stop_emulation")
 fileprivate func stop_emulation()

@@ -191,13 +191,21 @@ class RyujinxController: ObservableObject {
         get {
             return _isPaused
         } set {
+            guard !isStopping else { return }
             _isPaused = newValue
             Ryujinx.togglePauseEmulation(_isPaused)
         }
     }
     
     private var controllerManager: ControllerManager = .shared
-    private var emulationThreadActive = false
+    @Published private var executionLifetime = GameExecutionLifetime()
+    private var emulationThreadActive: Bool { executionLifetime.nativeActive }
+    var isStopping: Bool { executionLifetime.isStopping }
+
+    func stopGame() {
+        guard executionLifetime.requestStop() else { return }
+        Ryujinx.stopEmulation()
+    }
     
     var firmwareVersion: String {
         return Ryujinx.installedFirmwareVersion
@@ -228,12 +236,20 @@ class RyujinxController: ObservableObject {
     }
 
     func startGame(_ game: GameInfo, resumingLaunchID: UUID? = nil) {
-        guard !NSZImportCoordinator.shared.isBusy, !emulationThreadActive, !isRunning.hasStarted() else { return }
+        guard !NSZImportCoordinator.shared.isBusy else {
+            AppAlerts.showSyncAlert(title: "Cannot start game", message: "Wait for the game import to finish."); return
+        }
+        guard !emulationThreadActive else {
+            AppAlerts.showSyncAlert(title: "Cannot start game", message: isStopping ? "The previous game is still stopping. Please wait." : "Exit the current game before starting another."); return
+        }
+        guard !isRunning.hasStarted() else { return }
         if let resumingLaunchID {
             guard pendingLaunchID == resumingLaunchID, !launchCancelled, gameOperation != nil,
                   case .started(let pendingGame, .noJIT) = isRunning, pendingGame.titleId == game.titleId else { return }
         } else {
-            guard gameOperation == nil else { return }
+            guard gameOperation == nil else {
+                AppAlerts.showSyncAlert(title: "Cannot start game", message: "The previous JIT operation is still finishing. Please wait before retrying."); return
+            }
             do {
                 let lease = try LocalOperations.shared.acquire(.launch, gameID: UInt64(game.titleId, radix: 16))
                 gameOperation = lease; pendingLaunchID = lease.id; launchCancelled = false
@@ -291,10 +307,11 @@ class RyujinxController: ObservableObject {
         settings.inputPath = game.fileURL.path
         settings.backendThreading = .on
         
+        Ryujinx.beginEmulation()
+        executionLifetime.begin()
         isRunning = .started(game: game)
         _isPaused = false
         wasManuallyPaused = false
-        emulationThreadActive = true
         pendingLaunchID = nil
         
         let nativeSettingsManager = NativeSettingsManager.shared
@@ -307,7 +324,8 @@ class RyujinxController: ObservableObject {
             let response = Ryujinx.mainRyu(settings)
             
             DispatchQueue.main.async {
-                self.emulationThreadActive = false
+                self.executionLifetime.workerEnded()
+                Ryujinx.emulationView = nil
                 self.finishGameOperation()
                 
                 if response != 0 {

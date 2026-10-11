@@ -104,5 +104,13 @@ struct EmulationView: View {
                         }
                 }
         }
+        .allowsHitTesting(!ryujinxController.isStopping)
+        .overlay {
+            if ryujinxController.isStopping {
+                ProgressView("Stopping game…")
+                    .padding(24)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+            }
+        }
     }
 }

@@ -83,8 +83,13 @@ namespace Ryujinx.Library
 
 
         private long _ticks;
-        public bool _isActive;
-        private bool _isStopped;
+        private readonly EmulationShutdown _shutdown = new();
+        private bool _isActive => _shutdown.IsActive;
+        private bool _isStopped => _shutdown.StopRequested;
+        private Exception _renderError;
+        private int _contextDisposed;
+        private int _gpuDisposed;
+        private int _inputsDisposed;
 
         public bool _ranFirstFrame;
 
@@ -189,6 +194,13 @@ namespace Ryujinx.Library
 
         public void Render()
         {
+            try { RenderCore(); }
+            catch (Exception error) { _renderError = error; Exit(); _gpuDoneEvent.Set(); }
+            finally { FinalizeWindowRenderer(); }
+        }
+
+        private void RenderCore()
+        {
             InitializeWindowRenderer();
 
             Device.Gpu.Renderer.Initialize(_glLogLevel);
@@ -205,96 +217,82 @@ namespace Ryujinx.Library
 
             Device.Gpu.Renderer.RunLoop(() =>
             {
-                Device.Gpu.SetGpuThread();
-                Device.Gpu.InitializeShaderCache(_gpuCancellationTokenSource.Token);
-
-                while (_isActive)
+                try { EmulationShutdown.RunRender(RenderGpuLoop, () =>
                 {
-                    if (_isStopped)
-                    {
-                        return;
-                    }
-
-                    _pauseEvent.WaitOne();
-
-                    _ticks += _chrono.ElapsedTicks;
-
-                    _chrono.Restart();
-
-                    if (Device.WaitFifo())
-                    {
-                        Device.Statistics.RecordFifoStart();
-                        Device.ProcessFrame();
-                        Device.Statistics.RecordFifoEnd();
-                    }
-
-                    if (Device.PresentLoop(SwapBuffers))
-                    {
-                        if (!_ranFirstFrame)
-                        { 
-                            _ranFirstFrame = true;
-                            SendStatistics(false);
-                         }
-                        
-                    }
-
-                    if (_ticks >= _ticksPerFrame)
-                    {
-                        string dockedMode = Device.System.State.DockedMode ? "Docked" : "Handheld";
-                        float scale = GraphicsConfig.ResScale;
-                        if (scale != 1)
-                        {
-                            dockedMode += $" ({scale}x)";
-                        }
-
-                        
-                        SendStatistics();
-
-                        /*
-                            Device.EnableDeviceVsync,
-                            dockedMode,
-                            Device.Configuration.AspectRatio.ToText(),
-                            $"Game: {Device.Statistics.GetGameFrameRate():00.00} FPS ({Device.Statistics.GetGameFrameTime():00.00} ms)",
-                            $"FIFO: {Device.Statistics.GetFifoPercent():0.00} %",
-                            $"GPU: {_gpuDriverName}"));
-                        */
-                        
-                        _ticks = Math.Min(_ticks - _ticksPerFrame, _ticksPerFrame);
-                    }
-                }
-
-                if (Device.Gpu.Renderer is ThreadedRenderer threaded)
-                {
-                    threaded.FlushThreadedCommands();
-                }
-
-                _gpuDoneEvent.Set();
+                    if (Device.Gpu.Renderer is ThreadedRenderer threaded) threaded.FlushThreadedCommands();
+                }, () => _gpuDoneEvent.Set()); }
+                catch (OperationCanceledException) when (_isStopped) { }
+                catch (Exception error) { _renderError = error; Exit(); }
             });
+        }
 
-            FinalizeWindowRenderer();
+        private void RenderGpuLoop()
+        {
+            Device.Gpu.SetGpuThread();
+            Device.Gpu.InitializeShaderCache(_gpuCancellationTokenSource.Token);
+
+            while (_isActive)
+            {
+                if (_isStopped)
+                {
+                    return;
+                }
+
+                _pauseEvent.WaitOne();
+
+                _ticks += _chrono.ElapsedTicks;
+
+                _chrono.Restart();
+
+                if (Device.WaitFifo())
+                {
+                    Device.Statistics.RecordFifoStart();
+                    Device.ProcessFrame();
+                    Device.Statistics.RecordFifoEnd();
+                }
+
+                if (Device.PresentLoop(SwapBuffers))
+                {
+                    if (!_ranFirstFrame)
+                    { 
+                        _ranFirstFrame = true;
+                        SendStatistics(false);
+                     }
+                    
+                }
+
+                if (_ticks >= _ticksPerFrame)
+                {
+                    string dockedMode = Device.System.State.DockedMode ? "Docked" : "Handheld";
+                    float scale = GraphicsConfig.ResScale;
+                    if (scale != 1)
+                    {
+                        dockedMode += $" ({scale}x)";
+                    }
+
+                    
+                    SendStatistics();
+
+                    /*
+                        Device.EnableDeviceVsync,
+                        dockedMode,
+                        Device.Configuration.AspectRatio.ToText(),
+                        $"Game: {Device.Statistics.GetGameFrameRate():00.00} FPS ({Device.Statistics.GetGameFrameTime():00.00} ms)",
+                        $"FIFO: {Device.Statistics.GetFifoPercent():0.00} %",
+                        $"GPU: {_gpuDriverName}"));
+                    */
+                    
+                    _ticks = Math.Min(_ticks - _ticksPerFrame, _ticksPerFrame);
+                }
+            }
+
         }
 
         public void Exit()
         {
-            TouchScreenManager?.Dispose();
-            NpadManager?.Dispose();
-            Device.Dispose();
-
-            if (_isStopped)
-            {
-                return;
-            }
-
-            _gpuCancellationTokenSource.Cancel();
-
-            _isStopped = true;
-            _isActive = false;
-            _inputUpdatedEvent.Set();
-
-            _exitEvent.WaitOne();
-            _exitEvent.Dispose();
-
-            NativeGamepadDriver.OnInputUpdated -= SignalInputUpdated;
+            // The execution thread owns disposal after both loops have ended.
+            _shutdown.RequestStop(() => _pauseEvent.Set(), () => _inputUpdatedEvent.Set(),
+                () => _gpuCancellationTokenSource.Cancel());
         }
 
         public static void ProcessMainThreadQueue()
@@ -353,9 +351,8 @@ namespace Ryujinx.Library
 
         public void Execute()
         {
+            if (!_shutdown.TryStart()) return;
             _chrono.Restart();
-            _isActive = true;
-
             InitializeWindow();
 
             Thread renderLoopThread = new(Render)
@@ -364,12 +361,12 @@ namespace Ryujinx.Library
             };
             renderLoopThread.Start();
 
-            MainLoop();
-
-            _gpuDoneEvent.WaitOne();
-            _gpuDoneEvent.Dispose();
-
-            Exit();
+            EmulationShutdown.RunMainLoop(MainLoop, Exit,
+                () => _gpuDoneEvent.WaitOne(), // GPU delegate ended; backend still consumes release commands.
+                DisposeDeviceContext,
+                () => { if (Interlocked.Exchange(ref _gpuDisposed, 1) == 0) Device.DisposeGpu(); },
+                () => renderLoopThread.Join());
+            if (_renderError != null) System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(_renderError).Throw();
         }
 
         public bool DisplayInputDialog(SoftwareKeyboardUIArgs args, out string userText)
@@ -507,6 +504,21 @@ namespace Ryujinx.Library
             Logger.Warning?.Print(LogClass.Application, "TakeScreenshot is not supported in headless mode.");
         }
 
+        public void DisposeDeviceContext()
+        {
+            if (Device == null || Interlocked.Exchange(ref _contextDisposed, 1) != 0) return;
+            ReleaseInputs();
+            Device.Dispose();
+        }
+
+        private void ReleaseInputs()
+        {
+            if (Interlocked.Exchange(ref _inputsDisposed, 1) != 0) return;
+            NativeGamepadDriver.OnInputUpdated -= SignalInputUpdated;
+            TouchScreenManager?.Dispose();
+            NpadManager?.Dispose();
+        }
+
         public void Dispose()
         {
             Dispose(true);
@@ -516,11 +528,8 @@ namespace Ryujinx.Library
         {
             if (disposing)
             {
-                _isActive = false;
-                _inputUpdatedEvent.Set();
-                NativeGamepadDriver.OnInputUpdated -= SignalInputUpdated;
-                TouchScreenManager?.Dispose();
-                NpadManager.Dispose();
+                Exit();
+                ReleaseInputs();
             }
         }
 

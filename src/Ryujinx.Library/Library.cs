@@ -78,6 +78,7 @@ namespace Ryujinx.Library
         private static InputManager _inputManager;
         private static Switch _emulationContext;
         private static WindowBase _window;
+        private static EmulationRunSession _runSession = new();
         private static WindowsMultimediaTimerResolution _windowsMultimediaTimerResolution;
         private static List<InputConfig> _inputConfiguration;
         private static bool _enableKeyboard;
@@ -95,7 +96,7 @@ namespace Ryujinx.Library
             {
                 Options managed = OptionsNativeHelper.FromNative(nativeOptions);
                 OptionsNativeHelper.Free(nativeOptions);
-                Load(managed);
+                if (!Volatile.Read(ref _runSession).StopRequested) Load(managed);
             }
             catch (Exception e)
             {
@@ -103,6 +104,8 @@ namespace Ryujinx.Library
                 return -1;
             }
 
+            Volatile.Read(ref _runSession).Complete();
+            Console.WriteLine("Emulation run returned.");
             return 0;
         }
 
@@ -175,19 +178,24 @@ namespace Ryujinx.Library
         [UnmanagedCallersOnly(EntryPoint = "set_unbounded_present_target_fps")]
         public static void SetUnboundedPresentTargetFps(int targetFps)
         {
-            _emulationContext?.SetUnboundedPresentTargetFps(targetFps);
+            Volatile.Read(ref _runSession).WhileRunning(() => Volatile.Read(ref _emulationContext)?.SetUnboundedPresentTargetFps(targetFps));
+        }
+
+        [UnmanagedCallersOnly(EntryPoint = "begin_emulation")]
+        public static void BeginEmulation()
+        {
+            lock (metalLayerLock) nativeMetalLayer = nint.Zero;
+            Volatile.Write(ref _runSession, new EmulationRunSession());
+            Console.WriteLine("Emulation run armed.");
         }
 
         [UnmanagedCallersOnly(EntryPoint = "stop_emulation")]
         public static void StopEmulation()
         {
-            if (_window != null)
-            {
-                _window.Exit();
-                _emulationContext.Dispose();
-            }
+            Console.WriteLine("Emulation stop requested.");
+            Volatile.Read(ref _runSession).RequestStop();
         }
-        
+
         public static nint GetNativeMetalLayer()
         {
             lock (metalLayerLock)
@@ -199,10 +207,10 @@ namespace Ryujinx.Library
         [UnmanagedCallersOnly(EntryPoint = "toggle_pause_emulation")]
         public static void TogglePauseEmulation(bool shouldPause)
         {
-            if (_emulationContext != null && _emulationContext.System != null)
+            Volatile.Read(ref _runSession).WhileRunning(() =>
             {
-                _emulationContext.System.TogglePauseEmulation(shouldPause);
-            }
+                Volatile.Read(ref _emulationContext)?.System?.TogglePauseEmulation(shouldPause);
+            });
         }
 
         [UnmanagedCallersOnly(EntryPoint = "load_keyset")]
@@ -854,6 +862,7 @@ namespace Ryujinx.Library
 
             while (true)
             {
+                if (Volatile.Read(ref _runSession).StopRequested) break;
                 LoadApplication(option);
 
                 if (_userChannelPersistence.PreviousIndex == -1 || !_userChannelPersistence.ShouldRestart)
@@ -862,7 +871,8 @@ namespace Ryujinx.Library
                 _userChannelPersistence.ShouldRestart = false;
             }
 
-            _inputManager.Dispose();
+            // InputManager is process-owned: Swift attaches controllers before
+            // each run, and Initialize is not called again between games.
 
             GC.Collect(2, GCCollectionMode.Aggressive, blocking: true, compacting: true);
 
@@ -1005,11 +1015,21 @@ namespace Ryujinx.Library
 
             DisplaySleep.Prevent();
 
-            _window.Initialize(_emulationContext, _inputConfiguration, _enableKeyboard, _enableMouse);
-            _window.Execute();
-
-            _emulationContext.Dispose();
-            _window.Dispose();
+            try
+            {
+                _window.Initialize(_emulationContext, _inputConfiguration, _enableKeyboard, _enableMouse);
+                _window.Execute();
+            }
+            finally
+            {
+                Volatile.Read(ref _runSession).RequestStop();
+                try { _window.Dispose(); }
+                finally
+                {
+                    try { _window.DisposeDeviceContext(); }
+                    finally { Volatile.Read(ref _runSession).Complete(); _window = null; _emulationContext = null; }
+                }
+            }
 
             if (OperatingSystem.IsWindows())
             {
@@ -1032,6 +1052,7 @@ namespace Ryujinx.Library
             IRenderer renderer = CreateRenderer(options, window);
 
             _window = window;
+            Volatile.Read(ref _runSession).PublishWindow(window.Exit);
             _window.IsFullscreen = options.IsFullscreen;
             _window.DisplayId = options.DisplayId;
             _window.IsExclusiveFullscreen = options.IsExclusiveFullscreen;

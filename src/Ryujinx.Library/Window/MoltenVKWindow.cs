@@ -69,6 +69,9 @@ namespace Ryujinx.Library
                 return (IntPtr)(ulong)_surface.Handle;
             }
 
+            // Read the current UI layer at surface creation, not only at load
+            // time; each new run clears the preceding game's layer pointer.
+            nativeMetalLayer = Library.GetNativeMetalLayer();
             if (nativeMetalLayer == IntPtr.Zero)
             {
                 throw new Exception("Cannot create Vulkan surface: No CAMetalLayer set");

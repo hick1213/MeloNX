@@ -6,6 +6,8 @@
     <PackageReference Include="NUnit3TestAdapter" />
     <PackageReference Include="Ryujinx.LibHac" />
     <ProjectReference Include="../Ryujinx.SaveSync/Ryujinx.SaveSync.csproj" />
+    <ProjectReference Include="../Ryujinx.Graphics.GAL/Ryujinx.Graphics.GAL.csproj" />
+    <Compile Include="../Ryujinx.Library/Window/EmulationShutdown.cs" Link="Production/EmulationShutdown.cs" />
     <Compile Include="../Ryujinx.Library/SaveSync/LibHacSaveRepository.cs" Link="Production/LibHacSaveRepository.cs" />
     <Compile Include="../Ryujinx.Library/SaveSync/SaveControlLoader.cs" Link="Production/SaveControlLoader.cs" />
     <Compile Include="../Ryujinx.Library/SaveSync/SaveContext.cs" Link="Production/SaveContext.cs" />

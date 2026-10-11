@@ -14,6 +14,7 @@ struct NoJITView: View {
     @EnvironmentObject var ryujinxController: RyujinxController
     @ObservedObject public var nativeSettingsManager = NativeSettingsManager.shared
     
+    @ObservedObject private var jit = BuiltInJITCoordinator.shared
     @State private var isJIT: Bool = false
     @State private var requestID = UUID()
     @State private var status = ""
@@ -21,6 +22,16 @@ struct NoJITView: View {
     @State private var setup = false
     @State private var pulseAnimation: Bool = false
     
+    private var jitStageDescription: String {
+        switch jit.phase {
+        case .checkingNetwork: return "Checking device connection"
+        case .preparing: return "Preparing developer support"
+        case .attaching: return "Connecting JIT helper"
+        case .mapping: return "Preparing executable memory"
+        case .stopping: return "Finishing JIT cleanup"
+        default: return "Waiting for JIT"
+        }
+    }
     var body: some View {
         VStack(spacing: 20) {
             ZStack {
@@ -89,7 +100,14 @@ struct NoJITView: View {
             )
             
             
+            if !jit.canRetry {
+                ProgressView("\(jitStageDescription) · \(Int(jit.elapsed)) s")
+                if !jit.message.isEmpty { Text(jit.message).font(.footnote).foregroundStyle(.secondary) }
+            }
             if !status.isEmpty { Text(status).font(.footnote).foregroundStyle(.secondary) }
+            if jit.canRetry, !status.isEmpty {
+                Button("Retry JIT") { attemptGeneration += 1 }
+            }
             Button("内置 JIT 设置") { setup = true }
             Button("Go Back") {
                 if let id = ryujinxController.pendingLaunchID { ryujinxController.cancelPendingLaunch(id) }
@@ -107,6 +125,7 @@ struct NoJITView: View {
         .task(id: attemptGeneration) {
             guard let launchID = ryujinxController.pendingLaunchID else { return }
             requestID = launchID
+            status = ""
             pulseAnimation = true
             let coordinator = BuiltInJITCoordinator.shared
             var ready = false

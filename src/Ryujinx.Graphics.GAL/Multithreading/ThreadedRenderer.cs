@@ -30,7 +30,9 @@ namespace Ryujinx.Graphics.GAL.Multithreading
         private readonly IRenderer _baseRenderer;
         private Thread _gpuThread;
         private Thread _backendThread;
-        private bool _running;
+        private volatile bool _running;
+        private readonly ManualResetEventSlim _backendEnded = new(false);
+        private int _disposed;
 
         private readonly AutoResetEvent _frameComplete = new(true);
 
@@ -112,7 +114,8 @@ namespace Ryujinx.Graphics.GAL.Multithreading
 
             _gpuThread.Start();
 
-            RenderLoop();
+            try { RenderLoop(); }
+            finally { _backendEnded.Set(); }
         }
 
         public void RenderLoop()
@@ -523,9 +526,11 @@ namespace Ryujinx.Graphics.GAL.Multithreading
 
         public void Dispose()
         {
+            if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
             GC.SuppressFinalize(this);
 
-            // Dispose must happen from the render thread, after all commands have completed.
+            // GPU production has ended. Let the backend finish consuming pending
+            // resource-release commands before closing its events and renderer.
 
             // Stop the GPU thread.
             _running = false;
@@ -534,6 +539,11 @@ namespace Ryujinx.Graphics.GAL.Multithreading
             if (_gpuThread != null && _gpuThread.IsAlive)
             {
                 _gpuThread.Join();
+            }
+
+            if (_backendThread != null && Thread.CurrentThread != _backendThread)
+            {
+                _backendEnded.Wait();
             }
 
             // Dispose the renderer.
