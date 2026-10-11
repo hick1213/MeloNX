@@ -23,7 +23,7 @@ if [ -z "$DOTNET" ] || [ ! -x "$DOTNET" ]; then
   exit 1
 fi
 
-publish_args=(publish -c Release -r ios-arm64 -p:ExtraDefineConstants=DISABLE_UPDATER src/Ryujinx.Library --self-contained true)
+publish_args=(publish -c Release -r ios-arm64 -p:ExtraDefineConstants=DISABLE_UPDATER src/Ryujinx.Library/Ryujinx.Library.csproj --self-contained true)
 if [ "${1:-${CONFIGURATION:-Release}}" = "Debug" ]; then
   publish_args+=(-p:MeloNXImportDiagnostics=true)
 fi
