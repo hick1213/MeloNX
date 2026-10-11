@@ -254,11 +254,11 @@ namespace Ryujinx.Library
                 if (Device.PresentLoop(SwapBuffers))
                 {
                     if (!_ranFirstFrame)
-                    { 
+                    {
                         _ranFirstFrame = true;
                         SendStatistics(false);
                      }
-                    
+
                 }
 
                 if (_ticks >= _ticksPerFrame)
@@ -270,7 +270,7 @@ namespace Ryujinx.Library
                         dockedMode += $" ({scale}x)";
                     }
 
-                    
+
                     SendStatistics();
 
                     /*
@@ -281,7 +281,7 @@ namespace Ryujinx.Library
                         $"FIFO: {Device.Statistics.GetFifoPercent():0.00} %",
                         $"GPU: {_gpuDriverName}"));
                     */
-                    
+
                     _ticks = Math.Min(_ticks - _ticksPerFrame, _ticksPerFrame);
                 }
             }
@@ -426,7 +426,7 @@ namespace Ryujinx.Library
 
             return true;
         }
-    
+
         public bool DisplayMessageDialog(ControllerAppletUIArgs args)
         {
             string playerCount = args.PlayerCountMin == args.PlayerCountMax
