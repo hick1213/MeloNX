@@ -10,6 +10,7 @@ public interface ISaveRepository
 {
     SaveSelection Describe(ulong titleId, string gamePath, string currentUser);
     SaveSelection AuthorizeRestore(SaveSelection selection, SaveSnapshot snapshot);
+    void AuthorizeRecovery(SaveSelection selection, IReadOnlyList<SaveKey> keys);
     bool Exists(SaveKey key);
     SaveMapping? FindMapping(SaveKey key);
     ILogicalSave OpenCommitted(SaveKey key);

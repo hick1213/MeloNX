@@ -32,6 +32,7 @@ public sealed class LibHacSaveRepository : ISaveRepository
     private readonly Dictionary<SaveKey, ulong> _known = [];
     private readonly HashSet<ulong> _preopened = [];
     private SaveSelection? _selection;
+    private bool _recovering;
     public LibHacSaveRepository(FileSystemClient fs, string userSaveRoot, string ownedRoot,
         IDurableStore durable, Func<ulong, string, SaveCreateControl?> loadControl, Func<long>? availableSpace = null)
     { _fs = fs; _physicalRoot = userSaveRoot; _ownedRoot = ownedRoot; _durable = durable; _loadControl = loadControl; _availableSpace = availableSpace ?? (() => SaveSpace.Available(ownedRoot)); }
@@ -39,7 +40,7 @@ public sealed class LibHacSaveRepository : ISaveRepository
     public SaveSelection Describe(ulong titleId, string gamePath, string currentUser)
     {
         SnapshotJson.ValidateKey(new SaveKey(titleId, currentUser, SaveKind.Account, 0));
-        _allowed.Clear(); _known.Clear(); _preopened.Clear();
+        _allowed.Clear(); _known.Clear(); _preopened.Clear(); _recovering = false;
         foreach (SaveDataInfo info in Enumerate())
         {
             var key = SelectKey(info, titleId, currentUser);
@@ -62,6 +63,18 @@ public sealed class LibHacSaveRepository : ISaveRepository
         return _selection;
     }
     public bool Exists(SaveKey key) => FindMapping(key) is not null;
+    public void AuthorizeRecovery(SaveSelection selection, IReadOnlyList<SaveKey> keys)
+    {
+        if (_selection?.Id != selection.Id || keys.Count is < 1 or > 64 || keys.Distinct().Count() != keys.Count)
+            throw new SaveSyncException("identityMismatch");
+        foreach (var key in keys)
+        {
+            SnapshotJson.ValidateKey(key);
+            if (key.ProgramId != selection.TitleId || key.Kind == SaveKind.Account && key.UserId != selection.LocalUserId)
+                throw new SaveSyncException("identityMismatch");
+        }
+        _allowed.Clear(); _allowed.UnionWith(keys); _selection = selection with { Keys = keys }; _recovering = true;
+    }
     public SaveMapping? FindMapping(SaveKey key)
     {
         AuthorizeKey(key);
@@ -165,12 +178,14 @@ public sealed class LibHacSaveRepository : ISaveRepository
     {
         if (_preopened.Contains(mapping.LocalSaveDataId)) return;
         string raw = HostPath.Combine(_physicalRoot, mapping.LocalSaveDataId.ToString("x16"));
-        if (!Directory.Exists(HostPath.Combine(raw, "0")) ||
+        if (!_recovering && (!Directory.Exists(HostPath.Combine(raw, "0")) ||
             Directory.Exists(HostPath.Combine(raw, "_")) || File.Exists(HostPath.Combine(raw, "_")) ||
-            Directory.Exists(HostPath.Combine(raw, "ExtraData_")) || File.Exists(HostPath.Combine(raw, "ExtraData_")))
+            Directory.Exists(HostPath.Combine(raw, "ExtraData_")) || File.Exists(HostPath.Combine(raw, "ExtraData_"))))
+            throw new SaveSyncException("rollbackRequired");
+        if (_recovering && !Directory.Exists(HostPath.Combine(raw, "0")) && !Directory.Exists(HostPath.Combine(raw, "1")))
             throw new SaveSyncException("rollbackRequired");
         long required = 0, workspace = 0;
-        foreach (string name in new[] { "0", "1", "ExtraData0", "ExtraData1" })
+        foreach (string name in new[] { "0", "1", "ExtraData0", "ExtraData1", "_", "ExtraData_" })
         {
             string path = HostPath.Combine(raw, name);
             if (Directory.Exists(path))
@@ -183,7 +198,7 @@ public sealed class LibHacSaveRepository : ISaveRepository
         SaveSpace.Require(_availableSpace(), checked(required + workspace));
         string backup = HostPath.Combine(_ownedRoot, "backups", mapping.Key.ProgramId.ToString("x16"), Guid.NewGuid().ToString("D"), "preopen", mapping.LocalSaveDataId.ToString("x16"));
         Directory.CreateDirectory(backup);
-        foreach (string name in new[] { "0", "1", "ExtraData0", "ExtraData1" })
+        foreach (string name in new[] { "0", "1", "ExtraData0", "ExtraData1", "_", "ExtraData_" })
         {
             string source = HostPath.Combine(raw, name), target = HostPath.Combine(backup, name);
             if (Directory.Exists(source))

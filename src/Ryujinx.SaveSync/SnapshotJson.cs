@@ -119,4 +119,6 @@ public sealed class SaveKindConverter : JsonConverter<SaveKind>
 [JsonSourceGenerationOptions(PropertyNamingPolicy = JsonKnownNamingPolicy.CamelCase, Converters = new[] { typeof(HexIdConverter), typeof(SaveKindConverter) })]
 [JsonSerializable(typeof(SaveSnapshot))]
 [JsonSerializable(typeof(SaveRecordManifest))]
+[JsonSerializable(typeof(RestoreJournal))]
+[JsonSerializable(typeof(BindingIntent))]
 public partial class SaveJsonContext : JsonSerializerContext;
