@@ -49,12 +49,12 @@ public enum SnapshotValidation {
     }
     public static func decodeSnapshot(_ data: Data) throws -> SaveSnapshot {
         guard data.count <= maxManifestBytes else { throw SaveSyncError.malformedSnapshot }
-        do { let value = try JSONDecoder().decode(SaveSnapshot.self, from: data); try validate(value); return value }
+        do { try BoundedSaveJSON.validate(data); let value = try JSONDecoder().decode(SaveSnapshot.self, from: data); try validate(value); return value }
         catch { throw SaveSyncError.malformedSnapshot }
     }
     public static func decodeRecord(_ data: Data) throws -> SaveRecordManifest {
         guard data.count <= maxManifestBytes else { throw SaveSyncError.malformedSnapshot }
-        do { let value = try JSONDecoder().decode(SaveRecordManifest.self, from: data); try validateRecord(value); return value }
+        do { try BoundedSaveJSON.validate(data); let value = try JSONDecoder().decode(SaveRecordManifest.self, from: data); try validateRecord(value); return value }
         catch { throw SaveSyncError.malformedSnapshot }
     }
     public static func encode<T: Encodable>(_ value: T) throws -> Data {
