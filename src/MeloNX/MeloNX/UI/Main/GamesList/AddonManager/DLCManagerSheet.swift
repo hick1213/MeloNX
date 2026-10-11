@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import MeloNXOperationCore
 import UniformTypeIdentifiers
 import Combine
 
@@ -240,6 +241,8 @@ struct DLCManagerSheet: View {
                 }) { _ in ownsNSZImport = false }
                 return
             }
+            guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }) else { return }
+            defer { try? operation.finish(workerHasEnded: true) }
             var newDLCs: [DLCItem] = []
             
             for selectedURL in urls {
@@ -308,6 +311,8 @@ struct DLCManagerSheet: View {
     }
     
     private func toggleDLC(_ dlc: DLCItem) {
+        guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }) else { return }
+        defer { try? operation.finish(workerHasEnded: true) }
         guard let index = dlcs.firstIndex(where: { $0.relativePath == dlc.relativePath }) else { return }
         dlcs[index].isEnabled.toggle()
         saveJSON()
@@ -318,6 +323,8 @@ struct DLCManagerSheet: View {
     }
     
     private func removeDLC(at indexSet: IndexSet) {
+        guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }) else { return }
+        defer { try? operation.finish(workerHasEnded: true) }
         guard let index = indexSet.first else { return }
         
         let dlcToRemove = dlcs[index]

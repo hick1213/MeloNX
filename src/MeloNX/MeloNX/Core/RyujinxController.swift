@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Combine
+import MeloNXOperationCore
 
 extension URL {
     @available(iOS, introduced: 14.0, deprecated: 16.0, message: "Use URL.documentsDirectory on iOS 16 and above")
@@ -122,6 +123,32 @@ class RyujinxController: ObservableObject {
     static var shared: RyujinxController = .init()
     
     private init() {}
+    private var gameOperation: LocalOperationLease?
+    private(set) var pendingLaunchID: UUID?
+    private var launchCancelled = false
+
+    func pendingGameLease(launchID: UUID? = nil) -> LocalOperationLease? {
+        guard !launchCancelled, !emulationThreadActive, let id = pendingLaunchID,
+              launchID == nil || launchID == id else { return nil }
+        return gameOperation
+    }
+    func cancelPendingLaunch(_ id: UUID) {
+        guard pendingLaunchID == id, !emulationThreadActive else { return }
+        launchCancelled = true
+        BuiltInJITCoordinator.shared.cancel(launchID: id)
+        lastGameLaunched = nil; isRunning = .stopped
+        finishCancelledLaunch()
+    }
+    private func finishCancelledLaunch() {
+        guard launchCancelled, !emulationThreadActive else { return }
+        finishGameOperation()
+    }
+    private func finishGameOperation() {
+        guard let lease = gameOperation else { return }
+        do { try lease.finish(workerHasEnded: !emulationThreadActive) }
+        catch { return } // A borrowed JIT helper still owns the pending launch.
+        gameOperation = nil; pendingLaunchID = nil; launchCancelled = false
+    }
     
     @Published var isRunning: RunningState = .stopped
     @Published var games: [GameInfo] = []
@@ -196,22 +223,39 @@ class RyujinxController: ObservableObject {
     var canBeginPackageImport: Bool {
         if case .started = isRunning { return false }
         return !emulationThreadActive && !NSZImportCoordinator.shared.isBusy && BuiltInJITCoordinator.shared.canRetry
+            && LocalOperations.shared.canAcquire(.packageImport, gameID: nil)
     }
 
-    func startGame(_ game: GameInfo) {
+    func startGame(_ game: GameInfo, resumingLaunchID: UUID? = nil) {
         guard !NSZImportCoordinator.shared.isBusy, !emulationThreadActive, !isRunning.hasStarted() else { return }
+        if let resumingLaunchID {
+            guard pendingLaunchID == resumingLaunchID, !launchCancelled, gameOperation != nil,
+                  case .started(let pendingGame, .noJIT) = isRunning, pendingGame.titleId == game.titleId else { return }
+        } else {
+            guard gameOperation == nil else { return }
+            do {
+                let lease = try LocalOperations.shared.acquire(.launch, gameID: UInt64(game.titleId, radix: 16))
+                gameOperation = lease; pendingLaunchID = lease.id; launchCancelled = false
+                lease.onWorkersEnded = { [weak self] in self?.finishCancelledLaunch() }
+            } catch {
+                AppAlerts.showSyncAlert(title: "Cannot start game", message: error.localizedDescription)
+                return
+            }
+        }
         
         loadConfig()
         
         if !hasIncreasedMemoryLimitEntitlement {
             isRunning = .started(game: game, state: .entitlement)
             lastGameLaunched = nil
+            finishGameOperation()
             return
         }
         
         if !hasExtendedVirtualAddressingEntitlement && AppEnvironment.shared.requiresExtendedVirtualAddressing() {
             isRunning = .started(game: game, state: .extendedEntitlement)
             lastGameLaunched = nil
+            finishGameOperation()
             return
         }
         
@@ -250,6 +294,7 @@ class RyujinxController: ObservableObject {
         _isPaused = false
         wasManuallyPaused = false
         emulationThreadActive = true
+        pendingLaunchID = nil
         
         let nativeSettingsManager = NativeSettingsManager.shared
         
@@ -262,6 +307,7 @@ class RyujinxController: ObservableObject {
             
             DispatchQueue.main.async {
                 self.emulationThreadActive = false
+                self.finishGameOperation()
                 
                 if response != 0 {
                     self.isRunning = .crashed(result: "Code: \(response)")

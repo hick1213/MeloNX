@@ -1,6 +1,7 @@
 import Foundation
 import Combine
 import MeloNXImportCore
+import MeloNXOperationCore
 
 @MainActor final class NSZImportCoordinator: ObservableObject {
     static let shared = NSZImportCoordinator()
@@ -32,6 +33,9 @@ import MeloNXImportCore
             completion(.failure(NSZNativeFailure(code: "busy")))
             return
         }
+        let operation: LocalOperationLease
+        do { operation = try LocalOperations.shared.acquire(.packageImport, gameID: applicationID) }
+        catch { completion(.failure(error)); return }
         let leases = urls.map { NSZSourceLease(url: $0) }
         packageKind = kind
         retainedPaths = []; queue.onImported = onImported
@@ -59,6 +63,9 @@ import MeloNXImportCore
             if let path = (queue.error as? NSZImportCancellation)?.retainedPath { retainedPaths.append(path) }
             queue.onImported = nil
             poller?.cancel(); poller = nil; self.worker = nil; operationID = nil; task = nil
+            // Queue returned only after native workers and registration callbacks ended.
+            // Unstarted later batch entries have no native run to join.
+            try? operation.finish(workerHasEnded: true)
             objectWillChange.send()
             if let result { completion(.success(result)) }
             else if !Task.isCancelled, !(queue.error is NSZImportCancellation), (queue.error != nil || engine.phase == .failed) {

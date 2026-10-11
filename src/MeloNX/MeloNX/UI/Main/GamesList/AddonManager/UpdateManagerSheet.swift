@@ -7,6 +7,7 @@
 
 
 import SwiftUI
+import MeloNXOperationCore
 import UniformTypeIdentifiers
 import Combine
 
@@ -248,6 +249,8 @@ struct UpdateManagerSheet: View {
                 }) { _ in ownsNSZImport = false }
                 return
             }
+            guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }) else { return }
+            defer { try? operation.finish(workerHasEnded: true) }
             var newUpdates: [UpdateItem] = []
             
             for selectedURL in urls {
@@ -308,6 +311,8 @@ struct UpdateManagerSheet: View {
     }
     
     private func toggleSelection(_ update: UpdateItem) {
+        guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }) else { return }
+        defer { try? operation.finish(workerHasEnded: true) }
         let nowSelected = !update.isSelected
         updates.forEach { $0.isSelected = $0.relativePath == update.relativePath && nowSelected }
         saveJSON()
@@ -318,6 +323,8 @@ struct UpdateManagerSheet: View {
     }
     
     private func removeUpdate(at indexSet: IndexSet) {
+        guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }) else { return }
+        defer { try? operation.finish(workerHasEnded: true) }
         guard let index = indexSet.first else { return }
         
         let updateToRemove = updates[index]

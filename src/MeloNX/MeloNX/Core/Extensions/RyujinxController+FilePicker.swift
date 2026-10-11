@@ -9,6 +9,7 @@ import Foundation
 import UIKit
 import Combine
 import MeloNXImportCore
+import MeloNXOperationCore
 
 extension RyujinxController {
     func beginNSZImport(urls: [URL], intent: NSZImportIntent,
@@ -38,6 +39,8 @@ extension RyujinxController {
                 return
             }
             
+            guard let operation = LocalOperations.beginImport() else { return }
+            defer { try? operation.finish(workerHasEnded: true) }
             _ = url.startAccessingSecurityScopedResource()
             
             do {
@@ -45,6 +48,7 @@ extension RyujinxController {
                 let fileExtension = (url.pathExtension as NSString)
                 
                 let gameInfo = Ryujinx.getGameInfo(arg0: handle.fileDescriptor, arg1: fileExtension, path: url)
+                try operation.finish(workerHasEnded: true)
                 
                 self.startGame(gameInfo)
             } catch {
@@ -74,6 +78,8 @@ extension RyujinxController {
                 AppAlerts.showSyncAlert(title: "Game Import", message: "Select one uncompressed game at a time. Multiple NSZ files can be queued together.")
                 return
             }
+            guard let operation = LocalOperations.beginImport() else { return }
+            defer { try? operation.finish(workerHasEnded: true) }
             
             let cool = url.startAccessingSecurityScopedResource()
             defer { cool ? url.stopAccessingSecurityScopedResource() : () }
@@ -111,6 +117,8 @@ extension RyujinxController {
                 return
             }
             
+            guard let operation = LocalOperations.beginImport() else { return }
+            defer { try? operation.finish(workerHasEnded: true) }
             do {
                 let path = url.path
                 
