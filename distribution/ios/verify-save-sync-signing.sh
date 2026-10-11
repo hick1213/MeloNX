@@ -38,6 +38,16 @@ def cloud_documents_allowed(requested, permitted):
     patterns = [permitted] if isinstance(permitted, str) else permitted
     return isinstance(patterns, list) and any(isinstance(value, str) and fnmatch.fnmatchcase('CloudDocuments', value) for value in patterns)
 
+def owned_helpers(app):
+    helpers = []
+    for path in (app / 'PlugIns').glob('*.appex'):
+        if path.name.startswith('._') and path.is_file() and not path.is_symlink():
+            continue  # AppleDouble resource metadata on external filesystems.
+        if path.is_symlink() or not path.is_dir():
+            raise RuntimeError('Invalid embedded helper bundle')
+        helpers.append(path)
+    return helpers
+
 def inspect(target, expected_bundle, host):
     info = plistlib.loads((target / 'Info.plist').read_bytes())
     actual, provisioning = entitlements(target), profile(target)
@@ -71,7 +81,7 @@ try:
     invoke(['codesign', '--verify', '--deep', '--strict', str(app)])
     checks['deep_strict_signature'] = True
     inspect(app, bundle, True)
-    helpers = list((app / 'PlugIns').glob('*.appex'))
+    helpers = owned_helpers(app)
     checks['one_owned_helper'] = len(helpers) == 1
     if len(helpers) == 1:
         inspect(helpers[0], bundle + '.JITHelper', False)

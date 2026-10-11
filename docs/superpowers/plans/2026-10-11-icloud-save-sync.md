@@ -526,6 +526,8 @@ signing verifier解析profile与实际entitlements，仅报告allowed identifier
 
 ## Verification checkpoint after sole final review
 
-2026-10-11：一次独立整分支审查完成，8项Important作者修复已提交edd6c14f9；保存/恢复 .NET57、Swift48均实际通过，签名服务wildcard测试及旧候选实际entitlement/profile检查通过。外置盘AppleDouble源文件/项目元数据问题由d309730a7/ee8d88fca修正，最终Debug全量iOS/AOT签名构建及最新候选实际profile/entitlement检查已通过；7个save exports和NSZ生产exports存在，LICENSE文件保留。外部候选 `.local/build-tools/icloud-install-candidate-ee8d88fca` 含源commit和二进制摘要，130163892字节。Release测试probe排除检查仍在运行。
+2026-10-11：一次独立整分支审查完成，8项Important作者修复已提交edd6c14f9；保存/恢复 .NET57、Swift48均实际通过，签名服务wildcard测试及旧候选实际entitlement/profile检查通过。外置盘AppleDouble源文件/项目元数据问题由d309730a7/ee8d88fca修正，最终Debug全量iOS/AOT签名构建及最新候选实际profile/entitlement检查已通过；7个save exports和NSZ生产exports存在，LICENSE文件保留。外部候选 `.local/build-tools/icloud-install-candidate-ee8d88fca` 含源commit和二进制摘要，130163892字节。Release全量签名构建也已通过；生产exports保留、测试probe实际不存在，host/helper/profile签名均通过。签名helper枚举忽略外置盘普通AppleDouble文件，拒绝符号链接/异常bundle。另存Release候选 `.local/build-tools/icloud-release-candidate-ee8d88fca`。
 
 Task8实机布局/点击/横屏/VoiceOver仍未验收。hick手机从可用转为paired但tunnel unavailable（CoreDevice4016），已请求连接解锁；真实游戏样本和同一iCloud第二设备仍未提供。Task9真实云上传、两设备下载/恢复、游戏内进度、离线/配额/冲突及新包JIT/NSZ实机回归均保持未验收。没有卸载应用、清理NAND或向云端写游戏存档。
+
+上传恢复细节已按审查修复：云端发布前持久化prepared receipt，发布中断重启恢复同一个UUID且只接受相同不可变文件；完成恢复后通过持久化的restore provenance退役旧queued receipt，下一次上传使用已恢复版本作parent。设备阻塞经CoreDevice4016和USBmux目标缺失双重确认，源构建成功不代替安装/实机验收。
