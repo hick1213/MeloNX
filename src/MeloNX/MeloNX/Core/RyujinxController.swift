@@ -135,7 +135,7 @@ class RyujinxController: ObservableObject {
     func cancelPendingLaunch(_ id: UUID) {
         guard pendingLaunchID == id, !emulationThreadActive else { return }
         launchCancelled = true
-        BuiltInJITCoordinator.shared.cancel(launchID: id)
+        BuiltInJITCoordinator.shared.cancel() // The matching pending game owns every borrowed helper.
         lastGameLaunched = nil; isRunning = .stopped
         finishCancelledLaunch()
     }
@@ -465,6 +465,7 @@ class RyujinxController: ObservableObject {
     
     
     func loadGames() {
+        guard SaveRecoveryBootstrap.shared.ready, LocalOperations.shared.canAcquire(.packageImport, gameID: nil) else { return }
         let fileManager = FileManager.default
         guard let documentsDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
             return

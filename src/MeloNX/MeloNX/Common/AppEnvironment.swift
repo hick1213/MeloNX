@@ -123,6 +123,7 @@ class AppEnvironment {
     
     static func handleDeepLink(_ url: URL, ryujinxController: RyujinxController) {
         Task {
+            guard await SaveRecoveryBootstrap.shared.ensureReady() else { return }
             guard let components = URLComponents(url: url, resolvingAgainstBaseURL: true) else { return }
             
             switch components.host {

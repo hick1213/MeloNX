@@ -57,6 +57,7 @@ struct ContentView: View {
 #endif
         }
         .task {
+            guard await SaveRecoveryBootstrap.shared.ensureReady() else { return }
             if ryujinxController.lastGameLaunched == nil {
                 EnableJIT.enableJIT(nativeSettingsManager.jitProvider(JITProvider.disabled).value)
             }

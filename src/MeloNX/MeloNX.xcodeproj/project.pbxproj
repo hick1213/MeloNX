@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		AA1110260000000000000102 /* MeloNXOperationCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA1110260000000000000101; };
+		AA1110260000000000000302 /* MeloNXSaveSyncCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA1110260000000000000301; };
 		AA1010260000000000000202 /* MeloNXImportCore in Frameworks */ = {isa = PBXBuildFile; productRef = AA1010260000000000000201; };
 		4E5FB8FA2F9612F7005969EC /* Melo-Controller in Frameworks */ = {isa = PBXBuildFile; productRef = 4E5FB8F92F9612F7005969EC /* Melo-Controller */; };
 		4E696875302702350024B484 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 4E696874302702350024B484 /* IOKit.framework */; };
@@ -121,6 +122,7 @@
 			files = (
                 AA1010260000000000000202 /* MeloNXImportCore in Frameworks */,
                 AA1110260000000000000102 /* MeloNXOperationCore in Frameworks */,
+                AA1110260000000000000302 /* MeloNXSaveSyncCore in Frameworks */,
 				4E696875302702350024B484 /* IOKit.framework in Frameworks */,
 				4E5FB8FA2F9612F7005969EC /* Melo-Controller in Frameworks */,
 				4EC482D22F8D101B008C1955 /* Ryujinx.Library.dylib in Frameworks */,
@@ -211,6 +213,7 @@
                 AA1010260000000000000002,
                 AA1010260000000000000201 /* MeloNXImportCore */,
                 AA1110260000000000000101 /* MeloNXOperationCore */,
+                AA1110260000000000000301 /* MeloNXSaveSyncCore */,
 			);
 			productName = MeloNX;
 			productReference = 4ED5D50B2F80DD02007DB057 /* MeloNX.app */;
@@ -258,6 +261,7 @@
 			packageReferences = (
                 AA1010260000000000000200 /* MeloNXImportCore */,
                 AA1110260000000000000100 /* MeloNXOperationCore */,
+                AA1110260000000000000300 /* MeloNXSaveSyncCore */,
 				4E5FB8F82F9612F6005969EC /* XCRemoteSwiftPackageReference "Melo-Controller" */,
 				4EA652392FBD941E00D6FB52 /* XCRemoteSwiftPackageReference "navigation-stack-backport" */,
                 AA1010260000000000000001,
@@ -647,6 +651,7 @@
 
 /* Begin XCSwiftPackageProductDependency section */
 		AA1110260000000000000101 /* MeloNXOperationCore */ = {isa = XCSwiftPackageProductDependency; package = AA1110260000000000000100; productName = MeloNXOperationCore; };
+		AA1110260000000000000301 /* MeloNXSaveSyncCore */ = {isa = XCSwiftPackageProductDependency; package = AA1110260000000000000300; productName = MeloNXSaveSyncCore; };
 		AA1010260000000000000201 /* MeloNXImportCore */ = {isa = XCSwiftPackageProductDependency; package = AA1010260000000000000200; productName = MeloNXImportCore; };
 		4E5FB8F92F9612F7005969EC /* Melo-Controller */ = {
 			isa = XCSwiftPackageProductDependency;
@@ -663,6 +668,7 @@
 /* End XCSwiftPackageProductDependency section */
 /* Begin XCLocalSwiftPackageReference section */
 		AA1110260000000000000100 /* MeloNXOperationCore */ = {isa = XCLocalSwiftPackageReference; relativePath = MeloNXOperationCore; };
+		AA1110260000000000000300 /* MeloNXSaveSyncCore */ = {isa = XCLocalSwiftPackageReference; relativePath = MeloNXSaveSyncCore; };
 		AA1010260000000000000200 /* MeloNXImportCore */ = {isa = XCLocalSwiftPackageReference; relativePath = MeloNXImportCore; };
 		AA1010260000000000000001 /* MeloNXJITCore */ = {isa = XCLocalSwiftPackageReference; relativePath = MeloNXJITCore; };
 /* End XCLocalSwiftPackageReference section */

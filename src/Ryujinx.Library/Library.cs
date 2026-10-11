@@ -225,9 +225,9 @@ namespace Ryujinx.Library
             if (_virtualFileSystem == null || _libHacHorizonManager == null || _accountManager == null)
                 throw new Ryujinx.SaveSync.SaveSyncException("busy");
             string root = AppDataManager.BaseDirPath;
-            string owned = Path.Combine(root, "SaveSync", "v1");
+            string owned = Ryujinx.SaveSync.SnapshotPaths.Contained(root, "SaveSync/v1");
             Directory.CreateDirectory(owned);
-            var durable = new Ryujinx.SaveSync.DurableFileStore();
+            var durable = new Ryujinx.SaveSync.DurableFileStore(root);
             var repository = new SaveSync.LibHacSaveRepository(_libHacHorizonManager.RyujinxClient.Fs,
                 Path.Combine(root, "bis", "user", "save"), owned, durable,
                 (title, gamePath) => SaveSync.SaveControlLoader.Load(gamePath, title, SnapshotImportKeys()));

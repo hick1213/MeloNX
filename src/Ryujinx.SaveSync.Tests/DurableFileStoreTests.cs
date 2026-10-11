@@ -6,6 +6,24 @@ namespace Ryujinx.SaveSync.Tests;
 public class DurableFileStoreTests
 {
     [Test]
+    public void AcknowledgedWriteMakesPreviousDeletionAndOwnedAncestorEntriesDurable()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "save-parent-sync-" + Guid.NewGuid());
+        string parent = Path.Combine(root, "SaveSync", "v1", "transactions");
+        Directory.CreateDirectory(parent);
+        try
+        {
+            string journal = Path.Combine(parent, "journal.json"); File.WriteAllText(journal, "old");
+            var io = new RecordingIO();
+            new DurableFileStore(io, root).WriteAtomic(journal, "new"u8);
+            Assert.That(io.Calls, Does.Contain(root));
+            Assert.That(io.Calls, Does.Contain(Path.Combine(root, "SaveSync")));
+            Assert.That(io.Calls[^1], Is.EqualTo(root));
+            Assert.That(io.PreviousPresentAtSync[^1], Is.False);
+        }
+        finally { Directory.Delete(root, true); }
+    }
+    [Test]
     public void SecondIoFailureCannotDeleteLastPreviousJournal()
     {
         string root = Path.Combine(Path.GetTempPath(), "save-durable-double-fault-" + Guid.NewGuid());
@@ -53,4 +71,13 @@ internal sealed class DoubleFailureIO : IFileDurability
         if (source.EndsWith(".previous", StringComparison.Ordinal)) throw new IOException("Injected journal rollback error");
         File.Move(source, target, true);
     }
+}
+
+internal sealed class RecordingIO : IFileDurability
+{
+    public List<string> Calls { get; } = [];
+    public List<bool> PreviousPresentAtSync { get; } = [];
+    public void SyncFile(string path) { }
+    public void SyncDirectory(string path) { Calls.Add(path); PreviousPresentAtSync.Add(Directory.EnumerateFiles(path, "*.previous").Any()); }
+    public void Replace(string source, string target) => File.Move(source, target, true);
 }

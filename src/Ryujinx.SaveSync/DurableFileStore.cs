@@ -15,15 +15,30 @@ internal sealed class DarwinFileDurability : IFileDurability
 public sealed class DurableFileStore : IDurableStore
 {
     private readonly IFileDurability _io;
+    private readonly string? _boundary;
     public DurableFileStore() : this(new DarwinFileDurability()) { }
-    public DurableFileStore(IFileDurability io) => _io = io;
+    public DurableFileStore(string boundary) : this(new DarwinFileDurability(), boundary) { }
+    public DurableFileStore(IFileDurability io, string? boundary = null)
+    { _io = io; _boundary = boundary is null ? null : Path.GetFullPath(boundary); }
+    private void SyncHierarchy(string directory)
+    {
+        directory = Path.GetFullPath(directory);
+        if (_boundary is not null && directory != _boundary && !directory.StartsWith(_boundary + Path.DirectorySeparatorChar, StringComparison.Ordinal))
+            throw new SaveSyncException("malformedSnapshot");
+        while (true)
+        {
+            _io.SyncDirectory(directory);
+            if (_boundary is null || directory == _boundary) break;
+            directory = Path.GetDirectoryName(directory) ?? throw new SaveSyncException("malformedSnapshot");
+        }
+    }
     public void WriteAtomic(string path, ReadOnlySpan<byte> bytes)
     {
         string parent = Path.GetDirectoryName(Path.GetFullPath(path))!;
         if (!Directory.Exists(parent)) throw new DirectoryNotFoundException();
         if (bytes.Length > SnapshotJson.MaxManifestBytes) throw new SaveSyncException("malformedSnapshot");
         // Detect unsupported directory durability before replacing anything.
-        _io.SyncDirectory(parent);
+        SyncHierarchy(parent);
         string temp = Path.Combine(parent, ".save-write-" + Guid.NewGuid());
         string old = path + ".previous";
         if (File.Exists(old)) throw new SaveSyncException("rollbackRequired");
@@ -33,12 +48,12 @@ public sealed class DurableFileStore : IDurableStore
             if (existed)
             {
                 DarwinFileNodes.RequireRegular(path);
-                File.Copy(path, old); _io.SyncFile(old); _io.SyncDirectory(parent);
+                File.Copy(path, old); _io.SyncFile(old); SyncHierarchy(parent);
             }
             using (var file = new FileStream(temp, FileMode.CreateNew, FileAccess.Write, FileShare.None))
             { file.Write(bytes); file.Flush(true); }
             _io.Replace(temp, path); published = true;
-            _io.SyncDirectory(parent);
+            SyncHierarchy(parent);
             acknowledged = true;
         }
         catch
@@ -49,7 +64,7 @@ public sealed class DurableFileStore : IDurableStore
                 // failure prevents restoring its directory entry.
                 if (existed) _io.Replace(old, path);
                 else File.Delete(path);
-                _io.SyncDirectory(parent);
+                SyncHierarchy(parent);
                 restored = true;
             }
             throw;
@@ -57,7 +72,8 @@ public sealed class DurableFileStore : IDurableStore
         finally
         {
             if (File.Exists(temp)) File.Delete(temp);
-            if (File.Exists(old) && (acknowledged || !published || restored)) File.Delete(old);
+            if (File.Exists(old) && (acknowledged || !published || restored))
+            { File.Delete(old); SyncHierarchy(parent); }
         }
     }
     public void SyncTree(string root)
@@ -76,6 +92,6 @@ public sealed class DurableFileStore : IDurableStore
         }
         foreach (string directory in directories.OrderByDescending(p => p.Length)) _io.SyncDirectory(directory);
         string? parent = Path.GetDirectoryName(Path.GetFullPath(root));
-        if (parent is not null) _io.SyncDirectory(parent);
+        if (parent is not null) SyncHierarchy(parent);
     }
 }

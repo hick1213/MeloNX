@@ -34,7 +34,7 @@ public static class SnapshotJson
     public static byte[] Encode(SaveRecordManifest value) { ValidateRecord(value); return Bounded(JsonSerializer.SerializeToUtf8Bytes(value, SaveJsonContext.Default.SaveRecordManifest)); }
     private static byte[] Bounded(byte[] value) { if (value.Length > MaxManifestBytes) throw Malformed(); return value; }
     private static SaveSyncException Malformed() => new("malformedSnapshot");
-    private static void CheckJson(ReadOnlySpan<byte> data)
+    internal static void CheckJson(ReadOnlySpan<byte> data)
     {
         if (data.Length > MaxManifestBytes) throw Malformed();
         var reader = new Utf8JsonReader(data, new JsonReaderOptions { MaxDepth = 64 });
@@ -121,4 +121,7 @@ public sealed class SaveKindConverter : JsonConverter<SaveKind>
 [JsonSerializable(typeof(SaveRecordManifest))]
 [JsonSerializable(typeof(RestoreJournal))]
 [JsonSerializable(typeof(BindingIntent))]
+[JsonSerializable(typeof(SaveNativeRequest))]
+[JsonSerializable(typeof(SaveNativeResult))]
+[JsonSerializable(typeof(SaveNativeProgress))]
 public partial class SaveJsonContext : JsonSerializerContext;

@@ -4,6 +4,7 @@ namespace Ryujinx.SaveSync;
 
 public static class SnapshotFiles
 {
+    public static void RequireRegularFile(string path) => DarwinFileNodes.RequireRegular(path);
     public const int BufferSize = 1024 * 1024;
     public static SaveRecordReference Export(string root, SaveKey cloudKey, Guid generation, ILogicalSave save, CancellationToken ct)
     {

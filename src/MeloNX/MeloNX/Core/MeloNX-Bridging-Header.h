@@ -15,6 +15,7 @@
 #include <stdint.h>
 #include "MeloNXRPPairing.h"
 #include "MeloNXNSZImport.h"
+#include "MeloNXSaveSync.h"
 #include "../Dependencies/BreakpointJIT.framework/Headers/BreakJIT.h"
 #include <sys/sysctl.h>
 #include <sys/proc.h>

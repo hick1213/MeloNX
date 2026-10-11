@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import MeloNXOperationCore
 
 enum JITProvider: String, Identifiable, CaseIterable {
     case disabled = "None"
@@ -48,6 +49,7 @@ class EnableJIT {
     }
     
     static func enableJIT(_ provider: JITProvider) {
+        guard SaveRecoveryBootstrap.shared.ready, RyujinxController.shared.pendingGameLease() != nil || LocalOperations.shared.canAcquire(.launch, gameID: nil) else { return }
         self.provider = nil
         guard !RyujinxController.shared.isJITEnabled, provider != .disabled else { return }
         self.provider = provider

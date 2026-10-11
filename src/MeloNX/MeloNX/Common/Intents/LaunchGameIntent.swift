@@ -7,6 +7,7 @@
 
 
 import Foundation
+import MeloNXOperationCore
 import SwiftUI
 import Intents
 import AppIntents
@@ -31,6 +32,7 @@ struct LaunchGameIntentDef: AppIntent {
     
     @MainActor
     func perform() async throws -> some IntentResult {
+        guard await SaveRecoveryBootstrap.shared.ensureReady() else { throw LocalOperationError.recoveryRequired }
         ryujinxController.loadGames()
         let ryujinx = ryujinxController.games
         

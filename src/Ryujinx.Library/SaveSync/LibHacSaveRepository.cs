@@ -49,7 +49,7 @@ public sealed class LibHacSaveRepository : ISaveRepository
         }
         if (_allowed.Count > 64) throw new SaveSyncException("malformedSnapshot");
         _selection = new SaveSelection(Guid.NewGuid(), titleId, currentUser,
-            _allowed.OrderBy(k => k.Kind).ThenBy(k => k.Index).ToArray(), _loadControl(titleId, gamePath));
+            _allowed.OrderBy(k => ((int)k.Kind << 16) | k.Index).ToArray(), _loadControl(titleId, gamePath));
         return _selection;
     }
     public SaveSelection AuthorizeRestore(SaveSelection selection, SaveSnapshot snapshot)
@@ -177,7 +177,7 @@ public sealed class LibHacSaveRepository : ISaveRepository
     private void BackupBeforeOpen(SaveMapping mapping)
     {
         if (_preopened.Contains(mapping.LocalSaveDataId)) return;
-        string raw = HostPath.Combine(_physicalRoot, mapping.LocalSaveDataId.ToString("x16"));
+        string raw = SnapshotPaths.Contained(_physicalRoot, mapping.LocalSaveDataId.ToString("x16"));
         if (!_recovering && (!Directory.Exists(HostPath.Combine(raw, "0")) ||
             Directory.Exists(HostPath.Combine(raw, "_")) || File.Exists(HostPath.Combine(raw, "_")) ||
             Directory.Exists(HostPath.Combine(raw, "ExtraData_")) || File.Exists(HostPath.Combine(raw, "ExtraData_"))))
@@ -187,20 +187,20 @@ public sealed class LibHacSaveRepository : ISaveRepository
         long required = 0, workspace = 0;
         foreach (string name in new[] { "0", "1", "ExtraData0", "ExtraData1", "_", "ExtraData_" })
         {
-            string path = HostPath.Combine(raw, name);
+            string path = SnapshotPaths.Contained(raw, name);
             if (Directory.Exists(path))
             {
                 foreach (var file in SnapshotFiles.Scan(path, CancellationToken.None).Where(e => !e.IsDirectory))
                 { required = checked(required + file.Length); if (name == "0") workspace = checked(workspace + file.Length); }
             }
-            else if (File.Exists(path)) required = checked(required + new FileInfo(path).Length);
+            else if (File.Exists(path)) { SnapshotFiles.RequireRegularFile(path); required = checked(required + new FileInfo(path).Length); }
         }
         SaveSpace.Require(_availableSpace(), checked(required + workspace));
         string backup = HostPath.Combine(_ownedRoot, "backups", mapping.Key.ProgramId.ToString("x16"), Guid.NewGuid().ToString("D"), "preopen", mapping.LocalSaveDataId.ToString("x16"));
         Directory.CreateDirectory(backup);
         foreach (string name in new[] { "0", "1", "ExtraData0", "ExtraData1", "_", "ExtraData_" })
         {
-            string source = HostPath.Combine(raw, name), target = HostPath.Combine(backup, name);
+            string source = SnapshotPaths.Contained(raw, name), target = HostPath.Combine(backup, name);
             if (Directory.Exists(source))
             {
                 Directory.CreateDirectory(target);
@@ -218,6 +218,7 @@ public sealed class LibHacSaveRepository : ISaveRepository
     }
     private static void CopyRawFile(string source, string target)
     {
+        SnapshotFiles.RequireRegularFile(source);
         using var input = new FileStream(source, FileMode.Open, FileAccess.Read, FileShare.ReadWrite, SnapshotFiles.BufferSize);
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
         byte[] buffer = new byte[SnapshotFiles.BufferSize];

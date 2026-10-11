@@ -57,6 +57,17 @@ public class SaveRepositoryTests
         Assert.That(File.ReadAllBytes(transient), Is.EqualTo(new byte[] { 1 }));
     }
     [Test]
+    public void LinkedPrivateMetadataIsRejectedBeforeOpeningSave()
+    {
+        using var f = SaveRepositoryFixture.Create([0], false);
+        var selection = f.Repository.Describe(f.TitleId, "fixture", f.LocalUserId);
+        string metadata = System.IO.Path.Combine(f.PhysicalDir(selection.Keys.Single()), "ExtraData0");
+        string external = System.IO.Path.Combine(f.Root, "decoy-metadata");
+        File.Copy(metadata, external); File.Delete(metadata); File.CreateSymbolicLink(metadata, external);
+        Assert.Throws<SaveSyncException>(() => f.Repository.OpenCommitted(selection.Keys.Single()));
+        Assert.That(new FileInfo(metadata).LinkTarget, Is.Not.Null);
+    }
+    [Test]
     public void LowSpaceFailsBeforeMountOrCreatingBackup()
     {
         using var f = SaveRepositoryFixture.Create([0], false);
