@@ -4,7 +4,12 @@
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="NUnit" />
     <PackageReference Include="NUnit3TestAdapter" />
+    <PackageReference Include="Ryujinx.LibHac" />
     <ProjectReference Include="../Ryujinx.SaveSync/Ryujinx.SaveSync.csproj" />
+    <Compile Include="../Ryujinx.Library/SaveSync/LibHacSaveRepository.cs" Link="Production/LibHacSaveRepository.cs" />
+    <Compile Include="../Ryujinx.Library/SaveSync/SaveControlLoader.cs" Link="Production/SaveControlLoader.cs" />
+    <Compile Include="../Ryujinx.Library/SaveSync/SaveContext.cs" Link="Production/SaveContext.cs" />
+    <Compile Include="../Ryujinx.HLE/FileSystem/EncryptedFileSystemCreator.cs" Link="Production/EncryptedFileSystemCreator.cs" />
     <None Include="../MeloNX/MeloNXSaveSyncCore/Tests/MeloNXSaveSyncCoreTests/Fixtures/**/*" Link="Fixtures/%(RecursiveDir)%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 </Project>

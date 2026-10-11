@@ -114,6 +114,7 @@
 
   <ItemGroup>
     <ProjectReference Include="../Ryujinx.Nsz/Ryujinx.Nsz.csproj" />
+    <ProjectReference Include="../Ryujinx.SaveSync/Ryujinx.SaveSync.csproj" />
     <ProjectReference Include="..\Ryujinx.Graphics.Vulkan\Ryujinx.Graphics.Vulkan.csproj" />
     <ProjectReference Include="..\Ryujinx.Input\Ryujinx.Input.csproj" />
     <ProjectReference Include="..\Ryujinx.Input.SDL3\Ryujinx.Input.SDL3.csproj" />
