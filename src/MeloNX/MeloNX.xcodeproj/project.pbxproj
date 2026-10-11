@@ -242,6 +242,7 @@
 				TargetAttributes = {
 					4ED5D50A2F80DD02007DB057 = {
 						CreatedOnToolsVersion = 26.2;
+						SystemCapabilities = { com.apple.iCloud = { enabled = 1; }; };
 						LastSwiftMigration = 2620;
 					};
 					4EF06B692FA36B2400E56036 = {

@@ -10,7 +10,7 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-10-icloud-save-sync-design.md`，用户2026-10-11确认书面设计，独立架构审阅80c628bbe已通过。
 
-**Execution:** Native，保留用户已明确选择；作者逐任务实现，最后一次独立整分支审查。此计划待用户审阅，当前只修改文档。
+**Execution:** Native，保留用户已明确选择；作者逐任务实现，最后一次独立整分支审查。用户已认可书面设计并批准此实施计划及 Native 执行；当前实施与验收状态见独立 ledger。
 
 ## Global Constraints
 
@@ -196,7 +196,7 @@ Task5的`NativeSaveWorker`实现SaveNativeService，内部每job的`run() async 
 
 blocked games限制launch/export/restore/packageRegistration，recovery lease允许处理该blocked游戏；bootstrap尚未扫描journal时全局初始化屏障尚未完成，全部启动入口等待。单独JIT重试也可能使用native helper，BuiltInJITCoordinator为它取得launch-kind lease（gameID nil），已有launch流程则借用同一个lease，不能以设置页没有选择游戏为由绕过gate。
 
-- [ ] 写Gate测试：noJIT等待持有launch、active native线程阻止save、`finish(false)`拒绝释放、stale lease不释放新generation、recovery只阻止其游戏。
+- [x] 写Gate测试：noJIT等待持有launch、active native线程阻止save、`finish(false)`拒绝释放、stale lease不释放新generation、recovery只阻止其游戏。
 
 ```swift
 @MainActor func testCancellationDoesNotReleaseLiveLease() throws {
@@ -209,12 +209,12 @@ blocked games限制launch/export/restore/packageRegistration，recovery lease允
 }
 ```
 
-- [ ] `swift test --package-path src/MeloNX/MeloNXOperationCore`观察RED缺少类型；配置/空target可与测试同一任务建立。实现UUID/generation lease、blockedSet、single owner，拒绝重复finish，保留可追踪错误。
-- [ ] 接入所有Controller.startGame/URL启动、NoJIT同一请求继续、NSZ begin及per-file注册；游戏mainRyu返回后才交还emulation lease。NSZ callbacks注册结束才结束packageImport lease；scope与handle规则保持。
+- [x] `swift test --package-path src/MeloNX/MeloNXOperationCore`观察RED缺少类型；配置/空target可与测试同一任务建立。实现UUID/generation lease、blockedSet、single owner，拒绝重复finish，保留可追踪错误。
+- [x] 接入所有Controller.startGame/URL启动、NoJIT同一请求继续、NSZ begin及per-file注册；游戏mainRyu返回后才交还emulation lease。NSZ callbacks注册结束才结束packageImport lease；scope与handle规则保持。
 
 完成NSZ queue的owned run及全部per-file registration后才调用`lease.finish(workerHasEnded: true)`；取消请求本身不执行finish。Gate的测试还要以held native completion断言lease仍占用，避免仅检查UI状态。
 
-- [ ] 运行OperationCore、ImportCore、JITCore及一次真实iOS build；预期原有NSZ22/JIT37测试不回归，新增gate用例通过。提交Task1源文件；不安装新app或修改iCloud权限。
+- [x] 运行OperationCore、ImportCore、JITCore及一次真实iOS build；预期原有NSZ22/JIT37测试不回归，新增gate用例通过。提交Task1源文件；不安装新app或修改iCloud权限。
 
 ## Task 2: Snapshot Schema, Safe Paths and Visible Version Graph
 
@@ -222,7 +222,7 @@ blocked games限制launch/export/restore/packageRegistration，recovery lease允
 
 **Produces:** Shared Contracts的SaveSnapshot/SaveRecordReference/SaveRecordManifest/VisibleSnapshot/SnapshotVersionGraph；schemaVersion1（整数）、generation/parent UUID、TitleID16hex、ownerUserID32hex、createdUTC、installationID随机UUID、records数组。引用含manifestRelativePath/manifestSha256/totalBytes；record manifest含files及emptyDirectories；每file含path、length(Int64)、sha25664hex；Device user为shared。totalBytes使用checked Int64求和且必须匹配清单。物理SaveDataId只允许本地journal/private backup，不在云端schema。
 
-- [ ] 写cross-language canonical fixture与恶意路径、case/NFC collision、manifest超4MiB、overflow、空目录、unknown type/schema测试。定义 `SnapshotFixture.oneAccountAndDevice()`生成两条公开测试记录及固定hash，无用户数据。
+- [x] 写cross-language canonical fixture与恶意路径、case/NFC collision、manifest超4MiB、overflow、空目录、unknown type/schema测试。定义 `SnapshotFixture.oneAccountAndDevice()`生成两条公开测试记录及固定hash，无用户数据。
 
 ```swift
 func testIncompleteVisibleChildBlocksItsCompleteParent() throws {
@@ -233,8 +233,8 @@ func testIncompleteVisibleChildBlocksItsCompleteParent() throws {
 }
 ```
 
-- [ ] 观察Swift/C#测试RED。实现手写/受控Codable/JsonSerializerContext，定长hex/UUID校验，路径分段验证及每次落盘再次containment检查；拒绝symlink/special file，不读取整个save到内存。C#合同`SaveRecordReference SnapshotFiles.Export(string root,SaveKey cloudKey,Guid generation,ILogicalSave save,CancellationToken ct)`写payload+record清单；`void SnapshotFiles.Verify(string root,SaveSnapshot snapshot,CancellationToken ct)`逐文件长度/hash。`SnapshotFixture.complete(generation:) -> VisibleSnapshot`和`pending(parent:) -> VisibleSnapshot`都使用同一固定TitleID/owner；前者verified，后者pending。
-- [ ] 实现所有可见manifest进图、parent必须同TitleID/身份、cycle/重复generation拒绝；限制图至8192节点。先判后继与分支，再判完整性；无parent独立分支保留，不按UTC选赢家。
+- [x] 观察Swift/C#测试RED。实现手写/受控Codable/JsonSerializerContext，定长hex/UUID校验，路径分段验证及每次落盘再次containment检查；拒绝symlink/special file，不读取整个save到内存。C#合同`SaveRecordReference SnapshotFiles.Export(string root,SaveKey cloudKey,Guid generation,ILogicalSave save,CancellationToken ct)`写payload+record清单；`void SnapshotFiles.Verify(string root,SaveSnapshot snapshot,CancellationToken ct)`逐文件长度/hash。`SnapshotFixture.complete(generation:) -> VisibleSnapshot`和`pending(parent:) -> VisibleSnapshot`都使用同一固定TitleID/owner；前者verified，后者pending。
+- [x] 实现所有可见manifest进图、parent必须同TitleID/身份、cycle/重复generation拒绝；限制图至8192节点。先判后继与分支，再判完整性；无parent独立分支保留，不按UTC选赢家。
 
 ```swift
 func selectVisibleHead(_ listing: CloudListing, cloudUserID: String) throws -> CloudHeadSelection {
@@ -243,7 +243,7 @@ func selectVisibleHead(_ listing: CloudListing, cloudUserID: String) throws -> C
 }
 ```
 
-- [ ] 测所有Review Focus云端先manifest后payload用例、两个同时上传分支、未知父版、设备时钟回拨、目录已见但game manifest未下载。unreadableGenerations非空时返回pending并阻止默认选择；已下载但解析非法返回malformedSnapshot，不把generation默默当不存在。跑两套fixture字节/hex一致性、完整Core套件，提交Task2。
+- [x] 测所有Review Focus云端先manifest后payload用例、两个同时上传分支、未知父版、设备时钟回拨、目录已见但game manifest未下载。unreadableGenerations非空时返回pending并阻止默认选择；已下载但解析非法返回malformedSnapshot，不把generation默默当不存在。跑两套fixture字节/hex一致性、完整Core套件，提交Task2。
 
 ## Task 3: Real LibHac Logical Save Enumeration, Safety Backup and Export
 
@@ -251,7 +251,7 @@ func selectVisibleHead(_ listing: CloudListing, cloudUserID: String) throws -> C
 
 **Consumes:** SaveKey/ILogicalSave/SnapshotFiles。**Produces:** ISaveRepository/FakeSaveRepository/SaveCreateControl、stable SaveSelection。`SaveContext.ReadCurrentSaveSelection(ulong titleId,string gamePath) -> SaveSelection`；`SaveContext.ExportSelection(SaveSelection selection,SaveExportIdentity identity,string localRoot,CancellationToken ct) -> SaveSnapshot`，其中C# SaveExportIdentity字段逐一对应Swift。Scope/FSID只在本地，cloud never carries them。
 
-- [ ] 写生成临时LibHac FsServer上下文测试：同ProgramId不同SaveDataId、Account与Device、多index、不同用户隔离、Primary/Normal过滤、only1拒绝、0/1不一致时挂载前安全备份、写句柄未关闭Commit失败。helper `SaveRepositoryFixture.Create(accountIndexes:[0,2],device:true)`返回独立fake NAND/Horizon/client，Dispose只删除其临时root。
+- [x] 写生成临时LibHac FsServer上下文测试：同ProgramId不同SaveDataId、Account与Device、多index、不同用户隔离、Primary/Normal过滤、only1拒绝、0/1不一致时挂载前安全备份、写句柄未关闭Commit失败。helper `SaveRepositoryFixture.Create(accountIndexes:[0,2],device:true)`返回独立fake NAND/Horizon/client，Dispose只删除其临时root。
 
 ```csharp
 [Test]
@@ -268,7 +268,7 @@ public void RestoreAuthorizationPreservesIndexesAndMapsOnlyAccountUser() {
 ```
 
 fixture的`Repository`、`TitleId`、`GamePath`、`LocalUserId`属性提供真实临时LibHac上下文；NACP loader可注入生成的合法ApplicationControlProperty，避免测试依赖用户游戏/keys。`SnapshotForOtherUser()`生成相同title/index集合但不同cloudUID，不携带SaveDataId。真实包NACP读取由Task9验证。
-- [ ] 观察RED。从 `_libHacHorizonManager.RyujinxClient.Fs` 获取privileged client；当前用户 `_accountManager.LastOpenedUser.UserId.ToLibHac()`，不新建VFS/Horizon singleton。分页 `OpenSaveDataIterator`→ReadSaveDataInfo，精确ProgramId/type/user/index/rank/state筛选。
+- [x] 观察RED。从 `_libHacHorizonManager.RyujinxClient.Fs` 获取privileged client；当前用户 `_accountManager.LastOpenedUser.UserId.ToLibHac()`，不新建VFS/Horizon singleton。分页 `OpenSaveDataIterator`→ReadSaveDataInfo，精确ProgramId/type/user/index/rank/state筛选。
 
 ```csharp
 SaveDataAttribute.Make(out var attribute, new ProgramId(key.ProgramId), type, user,
@@ -279,11 +279,11 @@ proxy.Get.OpenReadOnlySaveDataFileSystem(ref serviceFs, SaveDataSpaceId.User, in
 using var logical = new FileSystemServiceObjectAdapter(in serviceFs);
 ```
 
-- [ ] 首次逻辑open前检查该SaveDataId物理目录状态（不解析/改写NAND索引）；only1、transient `_`、非Normal返回恢复所需。0存在也先将该save的0/1/ExtraData原态安全复制并SyncTree至本地 `backups/<TitleID>/<UUID>/preopen/<SaveDataId>`，覆盖会被LibHac初始化丢弃的旧1；原态备份绝不上传、也不直接回写物理0。确认空间后才mount，导出仅committed逻辑数据。
-- [ ] Describe只短时持有gate，selection保存在native registry；export/restore开始时重新核验当前用户、ProgramId、索引映射及NACP不变。AuthorizeRestore只绑定合法源cloudUID到明确的localUID；记录集扩展至源manifest中的合法index，不依赖当前本机是否已创建它。
-- [ ] 读取真实游戏控制NACP；Library现有GameInfo不包含完整NACP，新增loader复用PFS/XCI/NCA/control读取及owned keys，不从名称推测。ApplicationId是attribute.ProgramId；NACP.SaveDataOwnerId只是creation owner，不能替代ProgramId。缺合法NACP则describe已有save可上传，创建缺失save返回错误。
-- [ ] `CreateExact`使用proxy.CreateSaveDataFileSystem + SaveDataCreationInfo.Make + SaveDataMetaPolicy；按Account/Device NACP size/journal/owner/flags及非零index精确创建，禁用会顺带创建BCAT/Temporary的EnsureApplicationSaveData便捷路径。用ReadExtraData记录本地大小/flags，Create/DeleteExact重新核验attribute。
-- [ ] 操作逻辑Fsa.IFileSystem，以1MiB循环Read/Write，CreateFile/SetSize截断，关闭所有写IFile后Commit。测试长文件变短、文件变目录、旧额外文件删除、empty dirs与原working副本保留。运行真实临时LibHac适配器测试+Core，记录platform durability限制，提交Task3。
+- [x] 首次逻辑open前检查该SaveDataId物理目录状态（不解析/改写NAND索引）；only1、transient `_`、非Normal返回恢复所需。0存在也先将该save的0/1/ExtraData原态安全复制并SyncTree至本地 `backups/<TitleID>/<UUID>/preopen/<SaveDataId>`，覆盖会被LibHac初始化丢弃的旧1；原态备份绝不上传、也不直接回写物理0。确认空间后才mount，导出仅committed逻辑数据。
+- [x] Describe只短时持有gate，selection保存在native registry；export/restore开始时重新核验当前用户、ProgramId、索引映射及NACP不变。AuthorizeRestore只绑定合法源cloudUID到明确的localUID；记录集扩展至源manifest中的合法index，不依赖当前本机是否已创建它。
+- [x] 读取真实游戏控制NACP；Library现有GameInfo不包含完整NACP，新增loader复用PFS/XCI/NCA/control读取及owned keys，不从名称推测。ApplicationId是attribute.ProgramId；NACP.SaveDataOwnerId只是creation owner，不能替代ProgramId。缺合法NACP则describe已有save可上传，创建缺失save返回错误。
+- [x] `CreateExact`使用proxy.CreateSaveDataFileSystem + SaveDataCreationInfo.Make + SaveDataMetaPolicy；按Account/Device NACP size/journal/owner/flags及非零index精确创建，禁用会顺带创建BCAT/Temporary的EnsureApplicationSaveData便捷路径。用ReadExtraData记录本地大小/flags，Create/DeleteExact重新核验attribute。
+- [x] 操作逻辑Fsa.IFileSystem，以1MiB循环Read/Write，CreateFile/SetSize截断，关闭所有写IFile后Commit。测试长文件变短、文件变目录、旧额外文件删除、empty dirs与原working副本保留。运行真实临时LibHac适配器测试+Core，记录platform durability限制，提交Task3。
 
 ## Task 4: Crash-Safe Multi-Save Restore and Journal Replay
 
@@ -291,7 +291,7 @@ using var logical = new FileSystemServiceObjectAdapter(in serviceFs);
 
 **Consumes:** ISaveRepository/SaveSelection、已完整校验本地snapshot；**Produces:** IDurableStore、RestoreOutcome、`Run/RequestSafeStop/RecoverIncomplete`。journal字段包含transactionID、selection/keys、本地原存在性/SaveDataId、所有backup路径/hash、mayHaveChanged、completed、bindingIntent与bindingApplied；fields严格本地，不上传。`RestoreJournal.WithMayHaveChanged(SaveKey) -> RestoreJournal`和`WithCompleted(BindingIntent) -> RestoreJournal`返回新immutable记录；`Encode() -> byte[]`有64KiB上界，backup文件目录列表存另一个受限manifest，避免journal超界。
 
-- [ ] 写每个mutation/durable-write/Commit前后fault injection：枚举既存keys→全部逻辑备份持久化→新建前mayHaveChanged→Commit成功但journal未更新→final completed写入→binding应用。fixture `RestoreFixture.StopAfter(point)`重启同一临时repository/journal，不能用线程取消当进程崩溃。
+- [x] 写每个mutation/durable-write/Commit前后fault injection：枚举既存keys→全部逻辑备份持久化→新建前mayHaveChanged→Commit成功但journal未更新→final completed写入→binding应用。fixture `RestoreFixture.StopAfter(point)`重启同一临时repository/journal，不能用线程取消当进程崩溃。
 
 测试合同`RestoreFault { BeforeFirstMutation,AfterCreate,AfterFirstCommit,AfterLastCommit,AfterCompleted,AfterBinding }`；`RestoreFixture.StopAfter(RestoreFault) -> RestoreFixture`，`RunInterrupted()`模拟持久状态已写但后续指令不执行，`RestartAndRecover()`重建transaction实例，`AllLogicalHashes() -> IReadOnlyDictionary<SaveKey,string>`；`OriginalHashes`、`Binding`、`OriginalBinding`为断言值。进程级终止/重启另在Task9实际device验证。
 
@@ -306,8 +306,8 @@ public void CrashAfterCommitBeforeCompletedRollsBackAllMayHaveChanged() {
 }
 ```
 
-- [ ] 观察RED。实现IDurableStore：同卷临时文件→Flush(true)→atomic rename→父目录fsync（Darwin P/Invoke open/fsync/close，返回值/errno必须核实）；SyncTree包括备份所有文件及目录。不能完成durability则在修改前失败；测试writer、rename、parent fsync各失败保存旧journal/备份。
-- [ ] 精确恢复流程，不只覆盖已有文件：validate全部snapshot→预估空间→备份所有受影响记录→持久journal→每record持久mayHaveChanged→CreateExact或OpenWritable→ReplaceFrom→关闭write handles→Commit。创建目标前持久记完整attribute，重启按attribute找新建ID，不能仅靠Create返回后记录ID。
+- [x] 观察RED。实现IDurableStore：同卷临时文件→Flush(true)→atomic rename→父目录fsync（Darwin P/Invoke open/fsync/close，返回值/errno必须核实）；SyncTree包括备份所有文件及目录。不能完成durability则在修改前失败；测试writer、rename、parent fsync各失败保存旧journal/备份。
+- [x] 精确恢复流程，不只覆盖已有文件：validate全部snapshot→预估空间→备份所有受影响记录→持久journal→每record持久mayHaveChanged→CreateExact或OpenWritable→ReplaceFrom→关闭write handles→Commit。创建目标前持久记完整attribute，重启按attribute找新建ID，不能仅靠Create返回后记录ID。
 
 ```csharp
 journal = journal.WithMayHaveChanged(key);
@@ -321,8 +321,8 @@ journal = journal.WithCompleted(bindingIntent);
 durable.WriteAtomic(journalPath, journal.Encode());
 ```
 
-- [ ] 失败/未完成重启回滚全部mayHaveChanged（原存在性false则DeleteExact，true则备份精确恢复+Commit），验证rollback后的hash；回滚失败保留journal并返回rollbackRequired/blocked-game集合。completed重启不回滚，向Task7返回binding补齐意图；重复replay幂等。
-- [ ] 测ENOSPC、用户取消beforeMutation/afterMutation、后台截止、多个index、创建部分失败、重复恢复、原0/1原态备份可读、成功后重启不退回旧进度。跑full C#事务套件，提交Task4。
+- [x] 失败/未完成重启回滚全部mayHaveChanged（原存在性false则DeleteExact，true则备份精确恢复+Commit），验证rollback后的hash；回滚失败保留journal并返回rollbackRequired/blocked-game集合。completed重启不回滚，向Task7返回binding补齐意图；重复replay幂等。
+- [x] 测ENOSPC、用户取消beforeMutation/afterMutation、后台截止、多个index、创建部分失败、重复恢复、原0/1原态备份可读、成功后重启不退回旧进度。跑full C#事务套件，提交Task4。
 
 ## Task 5: Bounded Native Save Jobs, Recovery Bootstrap and Swift Resource Adapter
 
@@ -343,7 +343,7 @@ void save_sync_string_free(char *value);
 
 请求schema1字段id、operation(describe/export/restore/recover)、titleID16hex、gamePath(可选)、selectionID、snapshotRoot、bindingIntent文件路径及exportIdentity（Shared Contracts全部字段）；恢复路径仅app-owned SaveSync/staging/backup/journal allowlist。describe结果包含本机selectionID/currentUID/slot列表/control可创建性；export结果指向已验证本地game manifest，restore/recover结果文件含transactionID/completed binding意图/blocked games。ID都是定长字符串，saveDataId不进入cloud结果。
 
-- [ ] 写RED：Run once、active free拒绝、safeStop后必须等Commit/rollback结束、结果beforeEnd不可用、UTF8分配/free匹配、oversized/duplicate JSON、typed sanitized errors、borrow/free竞态。定义`HeldSaveWorker`保持真实worker lease直到confirmEnded。
+- [x] 写RED：Run once、active free拒绝、safeStop后必须等Commit/rollback结束、结果beforeEnd不可用、UTF8分配/free匹配、oversized/duplicate JSON、typed sanitized errors、borrow/free竞态。定义`HeldSaveWorker`保持真实worker lease直到confirmEnded。
 
 C# `SaveJobFixture.BlockBeforeCommit()`提供真实`Job: SaveSyncJob`，`WaitBeforeCommit()`等待mutation barrier（5秒失败），`ReleaseCommit()`允许安全完成。SaveSyncJob合同`Run() -> int`、`RequestSafeStop() -> void`、`TryFree() -> bool`；TryFree只在Run与borrowers都结束后为true。Swift worker测试通过HeldSaveWorker直接等待confirmEnded与借用归零，不依赖尚未实现的Task7 engine。
 
@@ -360,15 +360,15 @@ public void StopRequestDoesNotFreeRunningRestoreJob() {
     Assert.That(f.Job.TryFree(), Is.True);
 }
 ```
-- [ ] 实现owned registry与64KiB wire校验、pointer/string所有权；C入口catch所有managed异常，错误码不输出keys/opaque token。Swift dedicated queue通过Core handle lifetime pattern借用、停止poll、free native、确认真实结束后才允许owner释放gate；`NativeSaveWorker`实现Shared Contracts的SaveNativeService。
-- [ ] 初始化Library FSserver后、任何game/pendingJIT/package/save FS操作前执行bootstrap：读durable journals→mark blocked games→Run recover→completed事务binding补齐→unblock。恢复工作期间UI可以显示status，不能因页面先出现就开始游戏；测试cold launch/deep link/自动last-game启动都等待bootstrap。
-- [ ] 真实AOT/full iOS build验证exports与actor默认隔离；Core/NCA/NSZ/JIT回归套件通过。提交Task5；真实手机CABI执行仍在Task9，不以portable lifetime测试替代。
+- [x] 实现owned registry与64KiB wire校验、pointer/string所有权；C入口catch所有managed异常，错误码不输出keys/opaque token。Swift dedicated queue通过Core handle lifetime pattern借用、停止poll、free native、确认真实结束后才允许owner释放gate；`NativeSaveWorker`实现Shared Contracts的SaveNativeService。
+- [x] 初始化Library FSserver后、任何game/pendingJIT/package/save FS操作前执行bootstrap：读durable journals→mark blocked games→Run recover→completed事务binding补齐→unblock。恢复工作期间UI可以显示status，不能因页面先出现就开始游戏；测试cold launch/deep link/自动last-game启动都等待bootstrap。
+- [x] 真实AOT/full iOS build验证exports与actor默认隔离；Core/NCA/NSZ/JIT回归套件通过。提交Task5；真实手机CABI执行仍在Task9，不以portable lifetime测试替代。
 
 ## Task 6: CloudDocuments Container, Immutable Publication and Transfer Observation
 
 **Files:** Create app `Common/SaveSync/CloudDocumentsStore.swift`, `CloudTransferObserver.swift`, `CloudIdentityStore.swift`; SaveSyncCore Tests `CloudStoreTests.swift`。Core定义前述CloudIdentity/CloudSaveStore/CloudListing；测试用`ControlledCloudStore`实现CloudSaveStore，可按file key控制uploaded/downloaded/conflict/identityEpoch。`CloudFixture.accountAndDevice()`返回`(root: URL,snapshot: SaveSnapshot,identity: CloudIdentity)`，生成payload+两层manifest及摘要；fixture Dispose/tearDown只删自建临时root。
 
-- [ ] 写RED测试：容器nil、离线排队、Quota错误、manifest先到、部分files未上传、identity切换、NSFileVersion冲突、长reader阻塞upload（fake coordinator明确短锁退出再观察）。uploaded只在所有文件确认后产生。
+- [x] 写RED测试：容器nil、离线排队、Quota错误、manifest先到、部分files未上传、identity切换、NSFileVersion冲突、长reader阻塞upload（fake coordinator明确短锁退出再观察）。uploaded只在所有文件确认后产生。
 
 ```swift
 func testLocalPublicationDoesNotMeanUploaded() async throws {
@@ -385,10 +385,10 @@ func testLocalPublicationDoesNotMeanUploaded() async throws {
 
 ControlledCloudStore的test-only合同：`waitUntilObserving() async`等候upload waiter已注册；锁保护只读`confirmedUploaded: Bool`；同步`confirmAllFilesUploaded()`设置全部file状态并resume待观察continuation。它不调用真实iCloud。
 
-- [ ] 实现container URL后台获取，使用明确identifier；url=nil为cloudUnavailable。每任务捕获opaque ubiquityIdentityToken，不能解析/上传它；本地identityUUID/token匹配信息保存在Keychain，无法安全恢复旧token时采用新identityUUID，不复用旧绑定。每次协调/观察边界复核token，退出/切换账户取消旧cloud请求。
-- [ ] 发布payload+record manifests至新UUID目录、游戏manifest最后；NSFileCoordinator只做短时本地copy/move/read，不能包围网络等待/循环。采用NSMetadataQuery/FilePresenter按metadata事件更新资源值，uploaded要求每个文件+清单的isUploaded且无unresolved NSFileVersion；deadline超时为queued/offline，任务不假成功。
-- [ ] list先枚举可见generation目录及清单，无法读取的目录保留unreadableGenerations；已知头版本请求manifest/record/payload downloads并进行全量本地验证，verified后重新评估图。列表刷新/等待有deadline、可取消，不能在Core图中靠本地文件存在标成verified。选择后download再次短协调copy到owned staging→长度/hash验证；pending后继不能退回父版，显式选版本也必须完整验证。失败保留旧本地存档、完整cloud generations，不自动delete/resolve conflicts。
-- [ ] 跑fake-cloud状态/图/身份测试；用真实签名手机再验上传/下载在Task9。提交Task6（逻辑测试通过并不表示真实iCloud可用）。
+- [x] 实现container URL后台获取，使用明确identifier；url=nil为cloudUnavailable。每任务捕获opaque ubiquityIdentityToken，不能解析/上传它；本地identityUUID/token匹配信息保存在Keychain，无法安全恢复旧token时采用新identityUUID，不复用旧绑定。每次协调/观察边界复核token，退出/切换账户取消旧cloud请求。
+- [x] 发布payload+record manifests至新UUID目录、游戏manifest最后；NSFileCoordinator只做短时本地copy/move/read，不能包围网络等待/循环。采用NSMetadataQuery/FilePresenter按metadata事件更新资源值，uploaded要求每个文件+清单的isUploaded且无unresolved NSFileVersion；deadline超时为queued/offline，任务不假成功。
+- [x] list先枚举可见generation目录及清单，无法读取的目录保留unreadableGenerations；已知头版本请求manifest/record/payload downloads并进行全量本地验证，verified后重新评估图。列表刷新/等待有deadline、可取消，不能在Core图中靠本地文件存在标成verified。选择后download再次短协调copy到owned staging→长度/hash验证；pending后继不能退回父版，显式选版本也必须完整验证。失败保留旧本地存档、完整cloud generations，不自动delete/resolve conflicts。
+- [x] 跑fake-cloud状态/图/身份测试；用真实签名手机再验上传/下载在Task9。提交Task6（逻辑测试通过并不表示真实iCloud可用）。
 
 ## Task 7: Manual Coordinator, Identity Binding and Safe Cancellation
 
@@ -398,7 +398,7 @@ ControlledCloudStore的test-only合同：`waitUntilObserving() async`等候uploa
 
 `SaveEngineFixture.heldRestore()`为测试提供已prepare/confirm的engine、同一gate和HeldSaveWorker；`beginRestore() -> Task<Void,Never>`启动恢复，`waitUntilNativeMutation() async`等候fake mutation barrier，`worker.finish(status:)`只有在释放barrier后报告线程已结束。`SaveSyncPhase`是无关联值的Equatable enum，进度/typed error单独存viewmodel，保持phase测试稳定。
 
-- [ ] 写held-worker/cloud测试：只选game捕获current-user描述；upload稳定快照后释放local gate但cloud观察继续；restore开始前可取消；修改后取消只能安全结束；页面关闭/后台/身份切换不释放运行中worker；foreign generation不能改本地。
+- [x] 写held-worker/cloud测试：只选game捕获current-user描述；upload稳定快照后释放local gate但cloud观察继续；restore开始前可取消；修改后取消只能安全结束；页面关闭/后台/身份切换不释放运行中worker；foreign generation不能改本地。
 
 ```swift
 @MainActor func testCancelDuringRestoreKeepsLeaseUntilWorkerEnds() async throws {
@@ -413,7 +413,7 @@ ControlledCloudStore的test-only合同：`waitUntilObserving() async`等候uploa
     XCTAssertFalse(f.gate.busy)
 }
 ```
-- [ ] 实现本地bindings键`(localCloudAccountUUID,container,titleID,localUID)`→`(cloudUID,lastGeneration)`，upload读取localUID但使用cloudUID路径/manifest/parent。无匹配且唯一其他cloudUID时提供明确绑定确认；多用户歧义不猜测。Device user=shared。绑定意图写入Task4 journal，仅completed后应用，幂等重启补齐。
+- [x] 实现本地bindings键`(localCloudAccountUUID,container,titleID,localUID)`→`(cloudUID,lastGeneration)`，upload读取localUID但使用cloudUID路径/manifest/parent。无匹配且唯一其他cloudUID时提供明确绑定确认；多用户歧义不猜测。Device user=shared。绑定意图写入Task4 journal，仅completed后应用，幂等重启补齐。
 
 绑定写入沿用同卷临时文件、文件同步、atomic rename和parent fsync，返回值失败不得将bindingApplied/成功状态提前落盘。completed本地事务的binding修复不访问云端账户；即使当前已切换账户也只补齐journal原账户键并等待用户开启新任务。回滚失败的恢复工具提供重试journal rollback入口，不增添删除备份或强行解锁启动按钮。
 
@@ -442,8 +442,8 @@ try bindings.recordUploaded(key: key, cloudUID: exportIdentity.cloudUserID, gene
 
 此成功路径配套do/catch：describe/export抛错仍等待confirmEnded，再结束lease；若未结束进入finishing并保留lease，不能靠defer释放。发布/观察失败不推进binding parent。Task2定义`SaveSyncError: Error` cases `noSave,busy,cloudUnavailable,queued,quota,incompleteSnapshot,conflict,identityMismatch,malformedSnapshot,restoreFailed,rollbackRequired`；错误展示在Task8。Task7给SaveExportIdentity/public result structs提供同成员public initializer，installationID是app首次运行生成并持久保存的UUID。
 
-- [ ] 恢复确认先展示选择的generation/当前用户/将生成备份；user按恢复后取得独占lease→完整验证→native事务；background task expiration只requestSafeStop，不终止Commit/rollback。有限时间无法完成则journal/recoveryRequired保持blocked state，冷启动bootstrap replay。UI成功只能跟随nativecompleted+bindings持久化，不能跟随下载结束。
-- [ ] 测最后Commit/completed/绑定间三个中断顺序、旧账户完成消息不能污染新账户、冲突保留版本、未提交working数据不可上传、queued可重连观察但不自动再导出新进度。Core全套通过，提交Task7。
+- [x] 恢复确认先展示选择的generation/当前用户/将生成备份；user按恢复后取得独占lease→完整验证→native事务；background task expiration只requestSafeStop，不终止Commit/rollback。有限时间无法完成则journal/recoveryRequired保持blocked state，冷启动bootstrap replay。UI成功只能跟随nativecompleted+bindings持久化，不能跟随下载结束。
+- [x] 测最后Commit/completed/绑定间三个中断顺序、旧账户完成消息不能污染新账户、冲突保留版本、未提交working数据不可上传、queued可重连观察但不自动再导出新进度。Core全套通过，提交Task7。
 
 ## Task 8: Game-Only Manual UI and Meaningful Failure States
 
