@@ -126,6 +126,7 @@ class RyujinxController: ObservableObject {
     private var gameOperation: LocalOperationLease?
     private(set) var pendingLaunchID: UUID?
     private var launchCancelled = false
+    private var metadataReloadPending = false
 
     func pendingGameLease(launchID: UUID? = nil) -> LocalOperationLease? {
         guard !launchCancelled, !emulationThreadActive, let id = pendingLaunchID,
@@ -465,7 +466,15 @@ class RyujinxController: ObservableObject {
     
     
     func loadGames() {
-        guard SaveRecoveryBootstrap.shared.ready, LocalOperations.shared.canAcquire(.packageImport, gameID: nil) else { return }
+        guard LocalOperations.shared.canAcquire(.packageImport, gameID: nil) else {
+            if !metadataReloadPending {
+                metadataReloadPending = true
+                LocalOperations.shared.whenAvailable(.packageImport, gameID: nil) { [weak self] in
+                    self?.metadataReloadPending = false; self?.loadGames()
+                }
+            }
+            return
+        }
         let fileManager = FileManager.default
         guard let documentsDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
             return

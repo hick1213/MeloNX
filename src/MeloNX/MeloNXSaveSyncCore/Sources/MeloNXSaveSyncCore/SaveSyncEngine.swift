@@ -41,6 +41,12 @@ public enum SaveSyncPhase: Equatable, Sendable {
     public private(set) var cleanupPending = false
     public var canStart: Bool { operation == nil && lease == nil && gate.canAcquire(.saveExport, gameID: nil) }
     public var isActive: Bool { operation != nil || lease != nil }
+    public func resetSelection() {
+        guard operation == nil, lease == nil else { return }
+        prepared = nil; versions = []; defaultGeneration = nil; pendingGenerations = []; restoredGeneration = nil; error = nil
+        phase = blockedGames.isEmpty ? .idle : .recoveryRequired
+    }
+    public var preparedGameID: UInt64? { prepared?.game.titleID }
     public var localUserID: String? { prepared?.selection.localUserID }
     public var expectedCloudUserID: String? { prepared.map { $0.binding?.cloudUID ?? $0.selection.localUserID } }
     public init(gate: LocalOperationGate, native: any SaveNativeService, cloud: any CloudSaveStore,

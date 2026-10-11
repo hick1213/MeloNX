@@ -12,6 +12,7 @@ import Melo_Controller
 
 enum ActiveSheet: Identifiable, Equatable{
     case gameInfo(game: GameInfo)
+    case saveSync(game: GameInfo)
     case perGameSettings(game: GameInfo)
     // needs to be a full screen sheet so commented out
     // case gameController(game: Game)
@@ -22,7 +23,8 @@ enum ActiveSheet: Identifiable, Equatable{
 
     var id: String {
         switch self {
-        case .gameInfo(let game),
+        case .saveSync(let game),
+             .gameInfo(let game),
              .perGameSettings(let game),
              // .gameController(let game),
              .dlc(let game),
@@ -216,6 +218,8 @@ struct GamesListView: View {
         }
         .sheet(item: $activeSheet) { sheet in
             switch sheet {
+            case .saveSync(let game):
+                NavigationStack { GameSaveSyncView(game: game) }
             case .gameInfo(let game):
                 GameInfoSheet(game: game)
             case .perGameSettings(let game):
@@ -276,6 +280,7 @@ struct GamesListView: View {
                     Label("Play Now", systemImage: "play.fill")
                 }
                 
+                Button { activeSheet = .saveSync(game: game) } label: { Label("iCloud Saves", systemImage: "icloud") }
                 Button {
                     activeSheet = .gameInfo(game: game)
                 } label: {

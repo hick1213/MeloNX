@@ -27,6 +27,7 @@ import MeloNXSaveSyncCore
         pending = nil
         return result
     }
+    func didRecover(blockedGames: Set<UInt64>) { self.blockedGames = blockedGames }
     func retry() async -> Bool { ready = false; return await ensureReady() }
     private func performRecovery() async -> Bool {
         failed = false

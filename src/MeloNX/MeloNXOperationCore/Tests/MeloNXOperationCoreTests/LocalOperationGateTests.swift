@@ -2,6 +2,23 @@ import XCTest
 @testable import MeloNXOperationCore
 
 final class LocalOperationGateTests: XCTestCase {
+    @MainActor func testDeferredMetadataReadWaitsForStartupAndActualWorkerEnd() async throws {
+        let gate = LocalOperationGate()
+        gate.setStartupReady(false)
+        var reads = 0
+        gate.whenAvailable(.packageImport, gameID: nil) { reads += 1 }
+        XCTAssertEqual(reads, 0)
+        let recovery = try gate.acquire(.recovery, gameID: nil)
+        gate.setStartupReady(true)
+        XCTAssertEqual(reads, 0)
+        XCTAssertThrowsError(try recovery.finish(workerHasEnded: false))
+        XCTAssertEqual(reads, 0)
+        try recovery.finish(workerHasEnded: true)
+        XCTAssertEqual(reads, 1)
+        let later = try gate.acquire(.saveExport, gameID: 1)
+        try later.finish(workerHasEnded: true)
+        XCTAssertEqual(reads, 1)
+    }
     @MainActor func testPendingGameCannotReleaseWhileBorrowedJITWorkerRuns() async throws {
         let gate = LocalOperationGate()
         let launch = try gate.acquire(.launch, gameID: 0x100)

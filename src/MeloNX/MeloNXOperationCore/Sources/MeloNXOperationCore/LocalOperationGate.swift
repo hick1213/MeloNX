@@ -22,12 +22,24 @@ public enum LocalOperationError: Error, LocalizedError {
     private var owner: UUID?
     private var blockedGames: Set<UInt64> = []
     private var startupReady = true
+    private struct Waiter { let kind: LocalOperationKind; let gameID: UInt64?; let action: () -> Void }
+    private var waiters: [UUID: Waiter] = [:]
+    public func whenAvailable(_ kind: LocalOperationKind, gameID: UInt64?, action: @escaping () -> Void) {
+        if canAcquire(kind, gameID: gameID) { action() }
+        else { waiters[UUID()] = Waiter(kind: kind, gameID: gameID, action: action) }
+    }
+    private func notify() {
+        onChange?()
+        for (id, waiter) in Array(waiters) where canAcquire(waiter.kind, gameID: waiter.gameID) {
+            waiters.removeValue(forKey: id); waiter.action()
+        }
+    }
     public var busy: Bool { owner != nil }
     public var onChange: (() -> Void)?
     public init() {}
-    public func setStartupReady(_ ready: Bool) { startupReady = ready; onChange?() }
-    public func block(gameIDs: Set<UInt64>) { blockedGames.formUnion(gameIDs); onChange?() }
-    public func unblock(gameID: UInt64) { blockedGames.remove(gameID); onChange?() }
+    public func setStartupReady(_ ready: Bool) { startupReady = ready; notify() }
+    public func block(gameIDs: Set<UInt64>) { blockedGames.formUnion(gameIDs); notify() }
+    public func unblock(gameID: UInt64) { blockedGames.remove(gameID); notify() }
     public func canAcquire(_ kind: LocalOperationKind, gameID: UInt64?) -> Bool {
         (try? check(kind, gameID: gameID)) != nil
     }
@@ -43,13 +55,13 @@ public enum LocalOperationError: Error, LocalizedError {
         try check(kind, gameID: gameID)
         let id = UUID(); owner = id
         let lease = LocalOperationLease(gate: self, id: id, kind: kind, gameID: gameID)
-        onChange?()
+        notify()
         return lease
     }
     fileprivate func isCurrent(_ id: UUID) -> Bool { owner == id }
     fileprivate func finish(_ id: UUID) throws {
         guard owner == id else { throw LocalOperationError.staleLease }
-        owner = nil; onChange?()
+        owner = nil; notify()
     }
 }
 

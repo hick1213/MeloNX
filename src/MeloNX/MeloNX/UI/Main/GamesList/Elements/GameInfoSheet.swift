@@ -54,6 +54,7 @@ struct GameInfoSheet: View {
                 
                 
                 Section {
+                    NavigationLink { GameSaveSyncView(game: game) } label: { Label("iCloud Saves", systemImage: "icloud") }
                     Button {
                         UIPasteboard.general.url = URL(string: "melonx://game?id=\(game.titleId)")
                         

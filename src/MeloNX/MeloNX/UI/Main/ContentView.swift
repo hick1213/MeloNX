@@ -166,6 +166,7 @@ struct ContentView: View {
         .sheet(isPresented: Binding(get: { nszImport.isBusy && nszImport.packageKind == 0 }, set: { if !$0 { nszImport.cancel() } })) {
             NSZImportProgressView()
         }
+        .safeAreaInset(edge: .top) { SaveRecoveryStatusView() }
         .onDisappear { if nszImport.isBusy { nszImport.cancel() } }
         .onChange(of: scenePhase) { newPhase in
             switch newPhase {

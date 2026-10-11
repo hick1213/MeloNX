@@ -153,4 +153,14 @@ final class SaveSyncEngineTests: XCTestCase {
         await f.engine.retryRecovery()
         XCTAssertTrue(f.gate.canAcquire(.launch, gameID: 0x100))
     }
+
+    @MainActor func testChangingGameSelectionCannotRestorePriorGamesPreparedSnapshot() async throws {
+        let f = SaveEngineFixture(); defer { f.dispose() }
+        let snapshot = try await f.installSnapshot(); await f.engine.prepareDownload(f.game)
+        f.engine.resetSelection()
+        await f.engine.restorePrepared(generation: snapshot.generation, allowUserBinding: true)
+        let restores = await f.worker.restoreCount
+        XCTAssertEqual(restores, 0)
+        XCTAssertTrue(f.engine.versions.isEmpty)
+    }
 }

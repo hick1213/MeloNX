@@ -1,6 +1,413 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "iCloud Saves" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud 存档"
+          }
+        }
+      }
+    },
+    "Choose a game" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择游戏"
+          }
+        }
+      }
+    },
+    "Current emulator user" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前模拟器用户"
+          }
+        }
+      }
+    },
+    "Upload Save" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上传存档"
+          }
+        }
+      }
+    },
+    "Download Save" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "下载存档"
+          }
+        }
+      }
+    },
+    "Retry Pending Upload" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试待上传存档"
+          }
+        }
+      }
+    },
+    "Restore Save" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复存档"
+          }
+        }
+      }
+    },
+    "Cloud Save" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "云端存档"
+          }
+        }
+      }
+    },
+    "Cloud Versions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "云端版本"
+          }
+        }
+      }
+    },
+    "Choose Cloud Version" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择云端版本"
+          }
+        }
+      }
+    },
+    "Browse Older Versions" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "浏览历史版本"
+          }
+        }
+      }
+    },
+    "Confirm Restore" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "确认恢复"
+          }
+        }
+      }
+    },
+    "Back Up and Restore" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "备份并恢复"
+          }
+        }
+      }
+    },
+    "Different Emulator User" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不同的模拟器用户"
+          }
+        }
+      }
+    },
+    "Use this cloud user's save" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "使用此云端用户的存档"
+          }
+        }
+      }
+    },
+    "Retry Recovery" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试恢复检查"
+          }
+        }
+      }
+    },
+    "Save Recovery" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "存档恢复检查"
+          }
+        }
+      }
+    },
+    "Exit the game after saving. Upload and restore require the game and JIT tasks to be stopped." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在游戏中保存后退出游戏。上传或恢复前，请等待游戏和 JIT 任务结束。"
+          }
+        }
+      }
+    },
+    "Your current emulator user's save will be backed up before it is replaced. The game must remain stopped until restoration finishes." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "替换前会备份当前模拟器用户的存档。恢复完成前，请保持游戏停止。"
+          }
+        }
+      }
+    },
+    "This cloud save belongs to another emulator user. Confirm that it is your progress before connecting it to the current user." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "此云端存档属于另一个模拟器用户。确认这是你的进度后，再将它关联到当前用户。"
+          }
+        }
+      }
+    },
+    "Select a game to sync its current user's save with your iCloud Drive. Cloud versions and restore backups are retained." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择游戏即可同步当前用户的存档到 iCloud Drive。云端历史版本和恢复备份会保留。"
+          }
+        }
+      }
+    },
+    "Finishing safely. Wait before starting another operation." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在安全完成操作，请等待后再开始其他任务。"
+          }
+        }
+      }
+    },
+    "All save files are confirmed uploaded to iCloud." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所有存档文件均已确认上传到 iCloud。"
+          }
+        }
+      }
+    },
+    "Save restore completed." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "存档恢复已完成。"
+          }
+        }
+      }
+    },
+    "Save recovery required." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "需要完成存档恢复检查。"
+          }
+        }
+      }
+    },
+    "The current user has no save for this game. Save your progress in the game first." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "当前用户还没有这个游戏的存档。请先在游戏中保存进度。"
+          }
+        }
+      }
+    },
+    "Exit the game and wait for JIT or import to finish." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "请退出游戏，并等待 JIT 或导入任务结束。"
+          }
+        }
+      }
+    },
+    "iCloud is unavailable. Check iCloud Drive, your account, and the app's cloud permissions." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud 不可用。请检查 iCloud Drive、账户及应用云端权限。"
+          }
+        }
+      }
+    },
+    "Upload is not complete. Reconnect and retry the previous snapshot." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上传尚未完成。请联网后重试之前的快照。"
+          }
+        }
+      }
+    },
+    "iCloud storage is full. Free some space and retry." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud 空间不足。请腾出空间后重试。"
+          }
+        }
+      }
+    },
+    "This save version is not fully available. Refresh or try again after downloading finishes." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个存档版本尚未完整下载。请刷新或等待下载完成后重试。"
+          }
+        }
+      }
+    },
+    "Save branches or user bindings have changed. Choose a specific cloud version; all versions are retained." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "存档分支或用户绑定已改变。请选择明确的云端版本，所有版本都会保留。"
+          }
+        }
+      }
+    },
+    "The iCloud account or emulator user changed. Select the game and refresh its versions again." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "iCloud 账户或模拟器用户已改变。请重新选择游戏并刷新版本。"
+          }
+        }
+      }
+    },
+    "Save verification failed. The incoming snapshot was not accepted." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "存档校验失败，未接受传入的快照。"
+          }
+        }
+      }
+    },
+    "The save operation failed. Check local storage and file access." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "存档操作失败，请检查本机存储和文件访问。"
+          }
+        }
+      }
+    },
+    "Save recovery is required before the affected game can start. Retry recovery." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "受影响的游戏启动前需要完成存档恢复检查。请重试恢复。"
+          }
+        }
+      }
+    },
+    "There is not enough local space for a safe snapshot and restore backup." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "本机空间不足，无法安全创建快照和恢复备份。"
+          }
+        }
+      }
+    },
     "" : {
 
     },

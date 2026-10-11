@@ -78,7 +78,7 @@ struct MeloNXApp: App {
 
     private var shouldShowSetup: Bool {
 #if DEBUG
-        if FirmwareImportDiagnostic.requested || JITAcquisitionDiagnostic.requested { return false }
+        if FirmwareImportDiagnostic.requested || JITAcquisitionDiagnostic.requested || SaveSyncUIDiagnostic.requested { return false }
 #endif
         return !hasSetupFinished
     }
@@ -98,22 +98,24 @@ struct MeloNXApp: App {
         WindowGroup {
             Group {
 #if DEBUG
-                if JITAcquisitionDiagnostic.requested {
+                if SaveSyncUIDiagnostic.requested {
+                    SaveSyncUIDiagnosticView()
+                } else if JITAcquisitionDiagnostic.requested {
                     if jitDiagnosticFinished {
                         ContentView()
                     } else {
                         Text("正在检查内置 JIT…")
                             .task {
-                                await JITAcquisitionDiagnostic.run()
+                                if await SaveRecoveryBootstrap.shared.ensureReady() { await JITAcquisitionDiagnostic.run() }
                                 jitDiagnosticFinished = true
                             }
                     }
                 } else if FirmwareImportDiagnostic.requested {
                     Text("正在安装 22.5.0 固件…")
-                        .task { await FirmwareImportDiagnostic.run() }
+                        .task { if await SaveRecoveryBootstrap.shared.ensureReady() { await FirmwareImportDiagnostic.run() } }
                 } else if JITCancellationDiagnostic.requested {
                     Text("Checking JIT helper cancellation…")
-                        .task { await JITCancellationDiagnostic.run() }
+                        .task { if await SaveRecoveryBootstrap.shared.ensureReady() { await JITCancellationDiagnostic.run() } }
                 } else if ProcessInfo.processInfo.arguments.contains("--jit-pairing-setup") {
                     NavigationView { BuiltInJITSetupView() }
                 } else { ContentView() }
@@ -124,6 +126,7 @@ struct MeloNXApp: App {
                 .environmentObject(ryujinxController)
                 .environmentObject(themeManager)
                 .withAppTheme()
+                .task { _ = await SaveRecoveryBootstrap.shared.ensureReady() }
                 .onAppear() {
                     UIDevice.current.beginGeneratingDeviceOrientationNotifications()
                     

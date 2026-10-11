@@ -2,6 +2,7 @@ import Foundation
 import Combine
 import UIKit
 import MeloNXSaveSyncCore
+import MeloNXOperationCore
 
 @MainActor final class SaveSyncCoordinator: ObservableObject {
     static let shared = SaveSyncCoordinator()
@@ -13,6 +14,7 @@ import MeloNXSaveSyncCore
     private var backgroundObserver: NSObjectProtocol?
     @Published private(set) var preparationError: String?
     private var configurationError: String?
+    private var fixtureMode = false
     var isBusy: Bool { task != nil || engine.isActive }
     var canStart: Bool { !isBusy && configurationError == nil && bootstrap.ready && engine.canStart }
     private init() {
@@ -25,7 +27,7 @@ import MeloNXSaveSyncCore
             if FileManager.default.fileExists(atPath: file.path) {
                 installation = try JSONDecoder().decode(UUID.self, from: SaveLocalFiles.readRegular(file, limit: 256))
             } else { try SaveLocalFiles.writeDurable(file, JSONEncoder().encode(installation)) }
-        } catch { configurationError = "无法准备存档同步配置。请检查本机存储空间。" }
+        } catch { configurationError = "Save sync configuration could not be prepared. Check available storage." }
         engine = SaveSyncEngine(gate: LocalOperations.shared, native: bootstrap.native, cloud: CloudDocumentsStore(),
             bindings: bootstrap.bindings, ownedRoot: root, installationID: installation)
         engine.onChange = { [weak self] in self?.objectWillChange.send() }
@@ -37,10 +39,17 @@ import MeloNXSaveSyncCore
         }
         preparationError = configurationError
     }
+#if DEBUG
+    init(gate: MeloNXOperationCore.LocalOperationGate, native: any SaveNativeService, cloud: any CloudSaveStore, root: URL) {
+        fixtureMode = true
+        engine = SaveSyncEngine(gate: gate, native: native, cloud: cloud, bindings: SaveUserBindings(root: root), ownedRoot: root, installationID: UUID())
+        engine.onChange = { [weak self] in self?.objectWillChange.send() }
+    }
+#endif
     private func selection(_ game: GameInfo) -> SaveGameSelection? {
         let title = game.titleId.lowercased()
         guard SnapshotValidation.isHex(title, count: 16), let value = UInt64(title, radix: 16), value != 0 else {
-            preparationError = "无法识别这个游戏的存档标识。"; return nil
+            preparationError = "This game does not have a recognized save identifier."; return nil
         }
         return SaveGameSelection(titleID: value, gamePath: game.fileURL.path)
     }
@@ -49,11 +58,13 @@ import MeloNXSaveSyncCore
         preparationError = configurationError
         guard configurationError == nil else { return }
         task = Task {
-            guard await bootstrap.ensureReady() else {
-                preparationError = "启动恢复检查失败。请重试恢复检查。"
+            let recoveryReady: Bool
+            if fixtureMode { recoveryReady = true } else { recoveryReady = await bootstrap.ensureReady() }
+            guard recoveryReady else {
+                preparationError = "Startup save recovery failed. Retry recovery before continuing."
                 task = nil; objectWillChange.send(); return
             }
-            engine.markRecoveryRequired(gameIDs: bootstrap.blockedGames)
+            if !fixtureMode { engine.markRecoveryRequired(gameIDs: bootstrap.blockedGames) }
             backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "MeloNX Save Sync") { [weak self] in
                 Task { @MainActor in self?.cancel() }
             }
@@ -82,9 +93,14 @@ import MeloNXSaveSyncCore
     func retryRecovery() {
         guard task == nil else { return }
         task = Task {
-            if !bootstrap.ready {
-                if !(await bootstrap.retry()) { preparationError = "恢复检查仍未完成。保留的备份将在下次重试或启动时使用。" }
-            } else { await engine.retryRecovery() }
+            if fixtureMode { await engine.retryRecovery() }
+            else if !bootstrap.ready {
+                if !(await bootstrap.retry()) { preparationError = "Recovery is still required. Backups are retained for the next retry or launch." }
+            } else {
+                engine.markRecoveryRequired(gameIDs: bootstrap.blockedGames)
+                await engine.retryRecovery()
+                if engine.phase == .idle || engine.phase == .recoveryRequired { bootstrap.didRecover(blockedGames: engine.blockedGames) }
+            }
             RyujinxController.shared.loadGames()
             task = nil; objectWillChange.send()
         }

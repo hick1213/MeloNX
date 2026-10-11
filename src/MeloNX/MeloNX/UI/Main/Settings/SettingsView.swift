@@ -897,6 +897,9 @@ struct SettingsView: View {
     
     var miscForm: some View {
         Form {
+            Section("Saves") {
+                NavigationLink { GameSaveSyncView() } label: { Label("iCloud Saves", systemImage: "icloud") }
+            }
             // Custom ROM Folders
             Section("Custom ROM Folders") {
                 FolderListView()
