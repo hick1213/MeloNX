@@ -20,7 +20,19 @@ public struct SaveBinding: Codable, Equatable, Sendable {
 /// Private, atomically replaced state. A journal is acknowledged only after this
 /// writer has synchronized both the new file and the containing directory.
 public final class SaveUserBindings: @unchecked Sendable {
-    private struct Entry: Codable { let key: SaveBindingKey; let value: SaveBinding }
+    private struct Entry: Codable {
+        let key: SaveBindingKey; let value: SaveBinding; let completedRestore: Bool
+        init(key: SaveBindingKey, value: SaveBinding, completedRestore: Bool) {
+            self.key = key; self.value = value; self.completedRestore = completedRestore
+        }
+        private enum CodingKeys: String, CodingKey { case key, value, completedRestore }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            key = try c.decode(SaveBindingKey.self, forKey: .key)
+            value = try c.decode(SaveBinding.self, forKey: .value)
+            completedRestore = try c.decodeIfPresent(Bool.self, forKey: .completedRestore) ?? false
+        }
+    }
     private struct State: Codable { var version = 1; var entries: [Entry] = []; var applied: Set<UUID> = [] }
     private let lock = NSLock()
     private let root: URL
@@ -42,12 +54,16 @@ public final class SaveUserBindings: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         return try load().entries.first { $0.key == key }?.value
     }
+    public func hasCompletedRestore(key: SaveBindingKey) throws -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        return try load().entries.first { $0.key == key }?.completedRestore ?? false
+    }
     private func record(_ key: SaveBindingKey, _ value: SaveBinding, transaction: UUID?) throws {
         var state = try load()
         if let transaction, state.applied.contains(transaction) { return }
         _ = try SaveBindingIntent(accountKey: key.localCloudAccountUUID, container: key.container, titleID: key.titleID,
                                   localUID: key.localUID, cloudUID: value.cloudUID, generation: value.lastGeneration).validate()
-        state.entries.removeAll { $0.key == key }; state.entries.append(Entry(key: key, value: value))
+        state.entries.removeAll { $0.key == key }; state.entries.append(Entry(key: key, value: value, completedRestore: transaction != nil))
         if let transaction { state.applied.insert(transaction) }
         let data = try JSONEncoder().encode(state)
         guard state.entries.count <= 8192, data.count <= 4 * 1024 * 1024 else { throw SaveSyncError.identityMismatch }

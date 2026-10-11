@@ -225,7 +225,7 @@ namespace Ryujinx.Library
                                 controlFs = updatedControlFs;
 
                             ReadControlData(controlFs, controlHolder.ByteSpan);
-                            GetGameInformation(ref controlHolder.Value, out gameInfo.TitleName, out gameInfo.TitleId, out gameInfo.Developer, out gameInfo.Version);
+                            GetGameInformation(ref controlHolder.Value, out gameInfo.TitleName, out gameInfo.Developer, out gameInfo.Version);
 
                             try
                             {
@@ -281,7 +281,7 @@ namespace Ryujinx.Library
                                 gameInfo.Icon = Read(assetOffset + iconOffset, (int)iconSize);
 
                             Read(assetOffset + (int)nacpOffset, (int)nacpSize).AsSpan().CopyTo(controlHolder.ByteSpan);
-                            GetGameInformation(ref controlHolder.Value, out gameInfo.TitleName, out gameInfo.TitleId, out gameInfo.Developer, out gameInfo.Version);
+                            GetGameInformation(ref controlHolder.Value, out gameInfo.TitleName, out gameInfo.Developer, out gameInfo.Version);
                         }
                     }
                 }
@@ -317,7 +317,6 @@ namespace Ryujinx.Library
         private static void GetGameInformation(
             ref ApplicationControlProperty controlData,
             out string? titleName,
-            out string titleId,
             out string? publisher,
             out string? version)
         {
@@ -359,27 +358,18 @@ namespace Ryujinx.Library
                 }
             }
 
-            if (controlData.PresenceGroupId != 0)
-                titleId = controlData.PresenceGroupId.ToString("x16");
-            else if (controlData.SaveDataOwnerId != 0)
-                titleId = controlData.SaveDataOwnerId.ToString();
-            else if (controlData.AddOnContentBaseId != 0)
-                titleId = (controlData.AddOnContentBaseId - 0x1000).ToString("x16");
-            else
-                titleId = "0000000000000000";
-
             version = controlData.DisplayVersionString.ToString();
         }
 
         private static void GetControlFsAndTitleId(VirtualFileSystem virtualFileSystem, IFileSystem pfs, out IFileSystem? controlFs, out string? titleId)
         {
-            (_, _, Nca? controlNca) = GetGameData(virtualFileSystem, pfs, 0);
+            (Nca? mainNca, _, Nca? controlNca) = GetGameData(virtualFileSystem, pfs, 0);
 
             if (controlNca == null)
                 Logger.Warning?.Print(LogClass.Application, "Control NCA is null. Unable to load control FS.");
 
             controlFs = controlNca?.OpenFileSystem(NcaSectionType.Data, IntegrityCheckLevel.None);
-            titleId = controlNca?.Header.TitleId.ToString("x16");
+            titleId = mainNca?.Header.TitleId.ToString("x16");
         }
 
         private static (Nca? mainNca, Nca? patchNca, Nca? controlNca) GetGameData(VirtualFileSystem fileSystem, IFileSystem pfs, int programIndex)
@@ -407,7 +397,11 @@ namespace Ryujinx.Library
                     if (nca.SectionExists(NcaSectionType.Data) && nca.Header.GetFsHeader(dataIndex).IsPatchSection())
                         patchNca = nca;
                     else
+                    {
+                        if (mainNca != null && mainNca.Header.TitleId != nca.Header.TitleId)
+                            throw new InvalidDataException("Ambiguous program identity");
                         mainNca = nca;
+                    }
                 }
                 else if (nca.Header.ContentType == NcaContentType.Control)
                 {

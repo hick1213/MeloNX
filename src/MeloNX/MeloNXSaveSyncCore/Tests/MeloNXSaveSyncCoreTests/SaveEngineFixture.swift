@@ -77,6 +77,8 @@ actor ControlledCloudStore: CloudSaveStore {
     var onUploadWait: (@Sendable () -> Void)?
     var published: SaveSnapshot?
     var publishCount = 0
+    var failAfterPublication = false
+    func setPublicationFailure(_ value: Bool) { failAfterPublication = value }
     private var uploadContinuation: CheckedContinuation<Void, Error>?
     func setListing(_ value: CloudListing) { listing = value }
     func setQueued(_ value: Bool) { queued = value }
@@ -88,6 +90,7 @@ actor ControlledCloudStore: CloudSaveStore {
     func publish(localRoot: URL, snapshot: SaveSnapshot, identity: CloudIdentity) async throws {
         try check(identity); _ = try SnapshotLocalVerifier.verify(root: localRoot, snapshot: snapshot)
         published = snapshot; publishCount += 1
+        if failAfterPublication { throw CancellationError() }
     }
     func waitUploaded(snapshot: SaveSnapshot, identity: CloudIdentity) async throws {
         try check(identity)

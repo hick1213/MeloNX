@@ -6,6 +6,19 @@ namespace Ryujinx.SaveSync.Tests;
 public class DurableFileStoreTests
 {
     [Test]
+    public void CleanupSynchronizationFailureCannotUndoAcknowledgedPrimary()
+    {
+        string root = Path.Combine(Path.GetTempPath(), "save-cleanup-fault-" + Guid.NewGuid());
+        Directory.CreateDirectory(root);
+        try
+        {
+            string path = Path.Combine(root, "journal.json"); File.WriteAllText(path, "old");
+            Assert.DoesNotThrow(() => new DurableFileStore(new CleanupFailureIO()).WriteAtomic(path, "completed"u8));
+            Assert.That(File.ReadAllText(path), Is.EqualTo("completed"));
+        }
+        finally { Directory.Delete(root, true); }
+    }
+    [Test]
     public void AcknowledgedWriteMakesPreviousDeletionAndOwnedAncestorEntriesDurable()
     {
         string root = Path.Combine(Path.GetTempPath(), "save-parent-sync-" + Guid.NewGuid());
@@ -79,5 +92,13 @@ internal sealed class RecordingIO : IFileDurability
     public List<bool> PreviousPresentAtSync { get; } = [];
     public void SyncFile(string path) { }
     public void SyncDirectory(string path) { Calls.Add(path); PreviousPresentAtSync.Add(Directory.EnumerateFiles(path, "*.previous").Any()); }
+    public void Replace(string source, string target) => File.Move(source, target, true);
+}
+
+internal sealed class CleanupFailureIO : IFileDurability
+{
+    private int _syncs;
+    public void SyncFile(string path) { }
+    public void SyncDirectory(string path) { if (++_syncs == 4) throw new IOException("Cleanup synchronization failure"); }
     public void Replace(string source, string target) => File.Move(source, target, true);
 }

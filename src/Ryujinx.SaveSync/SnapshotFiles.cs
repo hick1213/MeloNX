@@ -115,7 +115,7 @@ public static class SnapshotFiles
         }
     }
     private static string Digest(ReadOnlySpan<byte> bytes) => Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant();
-    private static string[] EmptyDirectories(IReadOnlyList<SaveEntry> entries, CancellationToken ct)
+    public static string[] EmptyDirectories(IReadOnlyList<SaveEntry> entries, CancellationToken ct)
     {
         var nonEmpty = new HashSet<string>(StringComparer.Ordinal);
         foreach (SaveEntry entry in entries)

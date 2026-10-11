@@ -7,6 +7,29 @@ namespace Ryujinx.SaveSync.Tests;
 public class RestoreTransactionTests
 {
     [Test]
+    public void PhysicalSaveSynchronizationPrecedesCompletedPublication()
+    {
+        using var f = new RestoreFixture();
+        var durable = new CompletedSyncOrder(f.Nand.Durable, () => {
+            foreach (var key in f.Selection.Keys)
+                Assert.That(f.Nand.Durable.Synced, Does.Contain(f.Nand.PhysicalDir(key)));
+        });
+        var transaction = new SaveRestoreTransaction(f.Nand.Repository, durable, f.Nand.OwnedRoot, () => long.MaxValue);
+        Assert.That(transaction.Run(f.Selection, f.SnapshotRoot, f.Intent).Status, Is.EqualTo(RestoreStatus.Completed));
+    }
+    [Test]
+    public void PhysicalSynchronizationFailureCannotPublishCompletedOrRolledBack()
+    {
+        using var f = new RestoreFixture();
+        f.Nand.Durable.FailSyncPath = path => path.Contains("/bis/user/save/", StringComparison.Ordinal);
+        var result = f.Transaction().Run(f.Selection, f.SnapshotRoot, f.Intent);
+        Assert.That(result.Status, Is.EqualTo(RestoreStatus.RecoveryRequired));
+        Assert.That(result.CompletedBinding, Is.Null);
+        string journal = Directory.GetFiles(Path.Combine(f.Nand.OwnedRoot, "transactions"), "*.json").Single();
+        var value = RestoreJournal.Decode(File.ReadAllBytes(journal));
+        Assert.That(value.Completed, Is.False); Assert.That(value.RolledBack, Is.False);
+    }
+    [Test]
     public void FailedCompletedJournalWriteRollsBackWithoutBinding()
     {
         using var f = new RestoreFixture();
@@ -103,6 +126,8 @@ public class RestoreTransactionTests
 internal sealed class CompletedWriteFailure(IDurableStore inner) : IDurableStore
 {
     public void SyncTree(string root) => inner.SyncTree(root);
+    public void SyncFile(string path) => inner.SyncFile(path);
+    public void SyncDirectory(string path) => inner.SyncDirectory(path);
     public void WriteAtomic(string path, ReadOnlySpan<byte> bytes)
     {
         if (path.Contains("transactions") && System.Text.Encoding.UTF8.GetString(bytes).Contains("\"completed\":true")) throw new IOException("Injected completed write failure");
@@ -155,4 +180,16 @@ internal sealed class DiskLogicalSave(string root) : ILogicalSave
     public void ReplaceFrom(string path) => throw new InvalidOperationException();
     public void Commit() => throw new InvalidOperationException();
     public void Dispose() { }
+}
+
+internal sealed class CompletedSyncOrder(IDurableStore inner, Action assertSynced) : IDurableStore
+{
+    public void SyncTree(string root) => inner.SyncTree(root);
+    public void SyncFile(string path) => inner.SyncFile(path);
+    public void SyncDirectory(string path) => inner.SyncDirectory(path);
+    public void WriteAtomic(string path, ReadOnlySpan<byte> bytes)
+    {
+        if (path.Contains("transactions") && System.Text.Encoding.UTF8.GetString(bytes).Contains("\"completed\":true")) assertSynced();
+        inner.WriteAtomic(path, bytes);
+    }
 }

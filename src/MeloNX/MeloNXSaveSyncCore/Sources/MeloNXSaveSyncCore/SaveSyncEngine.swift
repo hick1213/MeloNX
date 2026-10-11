@@ -118,12 +118,18 @@ public enum SaveSyncPhase: Equatable, Sendable {
             try Task.checkCancellation()
             let key = SaveBindingKey(localCloudAccountUUID: identity.localAccountKey, container: identity.container, titleID: game.titleID, localUID: current.localUserID)
             let binding = try self.bindings.read(key: key)
-            let queued = try await SaveQueuedUpload.loadAsync(ownedRoot: self.ownedRoot, key: key, binding: binding)
+            let queued = try await SaveQueuedUpload.loadAsync(ownedRoot: self.ownedRoot, key: key, binding: binding, completedRestore: self.bindings.hasCompletedRestore(key: key))
             let snapshot: SaveSnapshot
             if let queued {
                 snapshot = queued.snapshot
                 try await self.releaseLease()
                 self.resumableUpload = true
+                if !queued.published {
+                    self.phase = .publishing
+                    try await self.cloud.publish(localRoot: SaveQueuedUpload.root(self.ownedRoot, generation: snapshot.generation), snapshot: snapshot, identity: identity)
+                    var published = queued; published.published = true
+                    try published.persist(ownedRoot: self.ownedRoot)
+                }
             } else {
                 guard !current.keys.isEmpty else { throw SaveSyncError.noSave }
                 let generation = UUID()
@@ -137,8 +143,11 @@ public enum SaveSyncPhase: Equatable, Sendable {
                 try Task.checkCancellation()
                 try await self.releaseLease()
                 self.phase = .publishing
+                var marker = SaveQueuedUpload(version: 1, key: key, snapshot: result.manifest, published: false)
+                try marker.persist(ownedRoot: self.ownedRoot)
+                self.resumableUpload = true
                 try await self.cloud.publish(localRoot: root, snapshot: result.manifest, identity: identity)
-                let marker = SaveQueuedUpload(version: 1, key: key, snapshot: result.manifest)
+                marker.published = true
                 try marker.persist(ownedRoot: self.ownedRoot)
                 snapshot = result.manifest; self.resumableUpload = true
             }

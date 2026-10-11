@@ -7,6 +7,21 @@ namespace Ryujinx.SaveSync.Tests;
 public class SnapshotFileTests
 {
     [Test]
+    public void MaximumDirectoryInventoryPreservesLeavesWithinBoundedWork()
+    {
+        var entries = Enumerable.Range(0, 99997).Select(i => new SaveEntry($"root/d{i}", true, 0))
+            .Concat(new[] { new SaveEntry("root", true, 0), new SaveEntry("root/d0/nested", true, 0), new SaveEntry("root/d1/file", false, 1) }).ToArray();
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        var empty = SnapshotFiles.EmptyDirectories(entries, CancellationToken.None);
+        Assert.That(empty.Length, Is.EqualTo(99996));
+        Assert.That(empty, Does.Contain("root/d0/nested"));
+        Assert.That(empty, Does.Not.Contain("root/d0"));
+        Assert.That(empty, Does.Not.Contain("root/d1"));
+        Assert.That(timer.Elapsed, Is.LessThan(TimeSpan.FromSeconds(5)));
+        using var cancelled = new CancellationTokenSource(); cancelled.Cancel();
+        Assert.Throws<OperationCanceledException>(() => SnapshotFiles.EmptyDirectories(entries, cancelled.Token));
+    }
+    [Test]
     public void ExportCompletesShortReadsAndPreservesEmptyDirectory()
     {
         string root = Path.Combine(Path.GetTempPath(), "save-sync-export-" + Guid.NewGuid());

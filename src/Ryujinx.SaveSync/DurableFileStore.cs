@@ -71,11 +71,19 @@ public sealed class DurableFileStore : IDurableStore
         }
         finally
         {
-            if (File.Exists(temp)) File.Delete(temp);
-            if (File.Exists(old) && (acknowledged || !published || restored))
-            { File.Delete(old); SyncHierarchy(parent); }
+            // Once the primary has been durably published, cleanup is not a
+            // failed write and must never trigger a transaction rollback.
+            try
+            {
+                if (File.Exists(temp)) File.Delete(temp);
+                if (File.Exists(old) && (acknowledged || !published || restored))
+                { File.Delete(old); SyncHierarchy(parent); }
+            }
+            catch (Exception error) when (acknowledged && error is IOException or UnauthorizedAccessException) { }
         }
     }
+    public void SyncFile(string path) { DarwinFileNodes.RequireRegular(path); _io.SyncFile(path); }
+    public void SyncDirectory(string path) => SyncHierarchy(path);
     public void SyncTree(string root)
     {
         var directories = new List<string> { root };

@@ -31,6 +31,7 @@ public sealed class LibHacSaveRepository : ISaveRepository
     private readonly HashSet<SaveKey> _allowed = [];
     private readonly Dictionary<SaveKey, ulong> _known = [];
     private readonly HashSet<ulong> _preopened = [];
+    private readonly Dictionary<SaveKey, ulong> _mutationIds = [];
     private SaveSelection? _selection;
     private bool _recovering;
     public LibHacSaveRepository(FileSystemClient fs, string userSaveRoot, string ownedRoot,
@@ -40,7 +41,9 @@ public sealed class LibHacSaveRepository : ISaveRepository
     public SaveSelection Describe(ulong titleId, string gamePath, string currentUser)
     {
         SnapshotJson.ValidateKey(new SaveKey(titleId, currentUser, SaveKind.Account, 0));
+        _selection = null;
         _allowed.Clear(); _known.Clear(); _preopened.Clear(); _recovering = false;
+        var control = _loadControl(titleId, gamePath);
         foreach (SaveDataInfo info in Enumerate())
         {
             var key = SelectKey(info, titleId, currentUser);
@@ -49,7 +52,7 @@ public sealed class LibHacSaveRepository : ISaveRepository
         }
         if (_allowed.Count > 64) throw new SaveSyncException("malformedSnapshot");
         _selection = new SaveSelection(Guid.NewGuid(), titleId, currentUser,
-            _allowed.OrderBy(k => ((int)k.Kind << 16) | k.Index).ToArray(), _loadControl(titleId, gamePath));
+            _allowed.OrderBy(k => ((int)k.Kind << 16) | k.Index).ToArray(), control);
         return _selection;
     }
     public SaveSelection AuthorizeRestore(SaveSelection selection, SaveSnapshot snapshot)
@@ -65,7 +68,7 @@ public sealed class LibHacSaveRepository : ISaveRepository
     public bool Exists(SaveKey key) => FindMapping(key) is not null;
     public void AuthorizeRecovery(SaveSelection selection, IReadOnlyList<SaveKey> keys)
     {
-        if (_selection?.Id != selection.Id || keys.Count is < 1 or > 64 || keys.Distinct().Count() != keys.Count)
+        if (keys.Count is < 1 or > 64 || keys.Distinct().Count() != keys.Count)
             throw new SaveSyncException("identityMismatch");
         foreach (var key in keys)
         {
@@ -73,7 +76,8 @@ public sealed class LibHacSaveRepository : ISaveRepository
             if (key.ProgramId != selection.TitleId || key.Kind == SaveKind.Account && key.UserId != selection.LocalUserId)
                 throw new SaveSyncException("identityMismatch");
         }
-        _allowed.Clear(); _allowed.UnionWith(keys); _selection = selection with { Keys = keys }; _recovering = true;
+        _allowed.Clear(); _allowed.UnionWith(keys); _known.Clear(); _preopened.Clear();
+        _selection = selection with { Keys = keys }; _recovering = true;
     }
     public SaveMapping? FindMapping(SaveKey key)
     {
@@ -115,14 +119,66 @@ public sealed class LibHacSaveRepository : ISaveRepository
         proxy.Get.CreateSaveDataFileSystem(in attribute, in creation, in meta).ThrowIfFailure();
         SaveDataInfo info = FindInfo(key) ?? throw new SaveSyncException("restoreFailed");
         _known[key] = info.SaveDataId;
+        _mutationIds[key] = info.SaveDataId;
+        SynchronizeMutation(key);
         return new(key, info.SaveDataId);
     }
     public void DeleteExact(SaveKey key)
     {
         var mapping = FindMapping(key);
         if (mapping is null) return;
+        _mutationIds[key] = mapping.LocalSaveDataId;
         _fs.Impl.DeleteSaveData(SaveDataSpaceId.User, mapping.LocalSaveDataId).ThrowIfFailure();
         _known.Remove(key); _preopened.Remove(mapping.LocalSaveDataId);
+    }
+    public void SynchronizeMutation(SaveKey key)
+    {
+        AuthorizeKey(key);
+        var info = FindInfo(key);
+        ulong? id = info?.SaveDataId;
+        if (id.HasValue) _mutationIds[key] = id.Value;
+        else if (_mutationIds.TryGetValue(key, out ulong deleted)) id = deleted;
+        if (id.HasValue)
+        {
+            string raw = SnapshotPaths.Contained(_physicalRoot, id.Value.ToString("x16"));
+            if (Directory.Exists(raw)) _durable.SyncTree(raw);
+            string userRoot = HostPath.GetDirectoryName(_physicalRoot)!;
+            string metaParent = SnapshotPaths.Contained(userRoot, "saveMeta");
+            if (Directory.Exists(metaParent))
+            {
+                string meta = SnapshotPaths.Contained(metaParent, id.Value.ToString("x16"));
+                if (Directory.Exists(meta)) _durable.SyncTree(meta);
+                _durable.SyncDirectory(metaParent);
+            }
+        }
+        // Deletion directory entries also need ordering when an earlier delete
+        // already removed the mapping and there is no remaining local ID.
+        _durable.SyncDirectory(_physicalRoot);
+        string metaRoot = SnapshotPaths.Contained(HostPath.GetDirectoryName(_physicalRoot)!, "saveMeta");
+        if (Directory.Exists(metaRoot)) _durable.SyncDirectory(metaRoot);
+        // User/System mappings share this SDK singleton. Synchronize only the
+        // archive, ID counter and ExtraData, never other System/BCAT payloads.
+        string bis = HostPath.GetDirectoryName(HostPath.GetDirectoryName(_physicalRoot)!)!;
+        string index = SnapshotPaths.Contained(bis, "system/save/8000000000000000");
+        if (!Directory.Exists(index)) throw new SaveSyncException("rollbackRequired");
+        foreach (string directory in new[] { "0", "1", "_" })
+        {
+            string working = SnapshotPaths.Contained(index, directory);
+            if (!Directory.Exists(working)) continue;
+            foreach (string name in new[] { "imkvdb.arc", "lastPublishedId" })
+            {
+                string file = SnapshotPaths.Contained(working, name);
+                if (File.Exists(file)) _durable.SyncFile(file);
+            }
+            _durable.SyncDirectory(working);
+        }
+        foreach (string name in new[] { "ExtraData0", "ExtraData1", "ExtraData_" })
+        {
+            string file = SnapshotPaths.Contained(index, name);
+            if (File.Exists(file)) _durable.SyncFile(file);
+        }
+        _durable.SyncDirectory(index);
+        _durable.SyncDirectory(HostPath.GetDirectoryName(index)!);
     }
     private void AuthorizeKey(SaveKey key)
     {
@@ -135,7 +191,11 @@ public sealed class LibHacSaveRepository : ISaveRepository
         SaveDataInfo? found = null;
         foreach (SaveDataInfo info in Enumerate())
         {
-            if (SelectKey(info, key.ProgramId, _selection!.LocalUserId) != key) continue;
+            if (_recovering)
+            {
+                if (info.Rank != SaveDataRank.Primary || info.Type is not (SaveDataType.Account or SaveDataType.Device) || ToKey(info) != key) continue;
+            }
+            else if (SelectKey(info, key.ProgramId, _selection!.LocalUserId) != key) continue;
             if (found is not null) throw new SaveSyncException("rollbackRequired");
             found = info;
         }

@@ -49,12 +49,12 @@ actor CloudDocumentsStore: CloudSaveStore {
         let files = try SnapshotLocalVerifier.verify(root: localRoot, snapshot: snapshot)
         let root = try await root(identity)
         let gamePath = SnapshotPaths.gameManifest(titleID: snapshot.titleID, generation: snapshot.generation)
-        // UUID directories are immutable. Never replace an existing generation.
+        // Resume an immutable UUID generation, accepting only identical existing files.
         for record in snapshot.records {
             let target = try SnapshotLocalVerifier.contained(root, record.manifestRelativePath).deletingLastPathComponent()
             try await check(identity)
             try await coordinate(target, writing: true, identity: identity) { target in
-                guard !FileManager.default.fileExists(atPath: target.path) else { throw SaveSyncError.conflict }
+                try SaveLocalFiles.checkOwnedTree(target, boundary: root)
                 try FileManager.default.createDirectory(at: target.appendingPathComponent("payload"), withIntermediateDirectories: true)
             }
             let localManifest = try SnapshotLocalVerifier.contained(localRoot, record.manifestRelativePath)
@@ -75,9 +75,8 @@ actor CloudDocumentsStore: CloudSaveStore {
             let source = try SnapshotLocalVerifier.contained(localRoot, relative)
             let target = try SnapshotLocalVerifier.contained(root, relative)
             try await coordinate(target, writing: true, identity: identity) { url in
-                guard !FileManager.default.fileExists(atPath: url.path) else { throw SaveSyncError.conflict }
-                try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-                try FileManager.default.copyItem(at: source, to: url)
+                guard NSFileVersion.unresolvedConflictVersionsOfItem(at: url)?.isEmpty != false else { throw SaveSyncError.conflict }
+                try SaveImmutablePublication.copy(source: source, destination: url, temporaryRoot: root.appendingPathComponent(".publication-staging"))
             }
         }
         try await check(identity)
@@ -203,11 +202,12 @@ actor CloudDocumentsStore: CloudSaveStore {
     func download(snapshot: SaveSnapshot, into destination: URL, identity: CloudIdentity) async throws {
         let root = try await root(identity)
         try await materialize(snapshot, root: root, identity: identity, deadline: Date().addingTimeInterval(120))
-        if FileManager.default.fileExists(atPath: destination.path) {
-            _ = try SnapshotLocalVerifier.verify(root: destination, snapshot: snapshot)
-            return
+        try await SaveDownloadStaging.download(destination: destination, snapshot: snapshot) { working in
+            try await self.copyDownloaded(snapshot: snapshot, root: root, destination: working, identity: identity)
         }
-        try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        try await check(identity)
+    }
+    private func copyDownloaded(snapshot: SaveSnapshot, root: URL, destination: URL, identity: CloudIdentity) async throws {
         for reference in snapshot.records {
             try await check(identity)
             let source = try SnapshotLocalVerifier.contained(root, reference.manifestRelativePath).deletingLastPathComponent()

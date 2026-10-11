@@ -8,6 +8,31 @@ namespace Ryujinx.SaveSync.Tests;
 public class SaveContextTests
 {
     [Test]
+    public void CanonicalProgramRequiresUniqueBaseAndNeverUsesControlOwner()
+    {
+        Assert.That(SaveControlLoader.CanonicalProgram([new(0x100, false, true), new(0x900, true, true), new(0x101, false, true), new(0x999, false, false)]), Is.EqualTo(0x100UL));
+        Assert.Throws<SaveSyncException>(() => SaveControlLoader.CanonicalProgram([new(0x999, false, false)]));
+        Assert.Throws<SaveSyncException>(() => SaveControlLoader.CanonicalProgram([new(0x100, false, true), new(0x200, false, true)]));
+        Assert.Throws<SaveSyncException>(() => SaveControlLoader.RequireProgram(0x999, 0x100));
+        SaveControlLoader.RequireProgram(0x100, 0x100);
+    }
+    [Test]
+    public void MissingControlDoesNotBypassProgramIdentityForExistingSaves()
+    {
+        using var f = SaveRepositoryFixture.Create([0], false);
+        var valid = f.NewRepository(f.Durable, (requested, _) => {
+            SaveControlLoader.RequireProgram(requested, f.TitleId); return null;
+        });
+        var selection = valid.Describe(f.TitleId, "confirmed-program-without-control", f.LocalUserId);
+        Assert.That(selection.Keys.Count, Is.EqualTo(1)); Assert.That(selection.Control, Is.Null);
+        Assert.That(selection.Keys.Single().ProgramId, Is.EqualTo(f.TitleId));
+        var wrong = f.NewRepository(f.Durable, (requested, _) => {
+            SaveControlLoader.RequireProgram(requested, f.TitleId + 0x1000); return null;
+        });
+        Assert.Throws<SaveSyncException>(() => wrong.Describe(f.TitleId, "different-program-without-control", f.LocalUserId));
+        Assert.Throws<SaveSyncException>(() => wrong.OpenCommitted(selection.Keys.Single()));
+    }
+    [Test]
     public void ControlUsesOwnerFieldWithoutReplacingSelectedProgramId()
     {
         var control = new ApplicationControlProperty { SaveDataOwnerId = 0x999,

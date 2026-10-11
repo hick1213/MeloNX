@@ -17,9 +17,12 @@ public interface ISaveRepository
     ILogicalSave OpenWritable(SaveKey key);
     SaveMapping CreateExact(SaveKey key, SaveCreateControl control);
     void DeleteExact(SaveKey key);
+    void SynchronizeMutation(SaveKey key);
 }
 public interface IDurableStore
 {
     void WriteAtomic(string path, ReadOnlySpan<byte> bytes);
     void SyncTree(string root);
+    void SyncFile(string path);
+    void SyncDirectory(string path);
 }

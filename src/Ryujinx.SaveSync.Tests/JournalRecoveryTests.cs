@@ -6,6 +6,19 @@ namespace Ryujinx.SaveSync.Tests;
 public class JournalRecoveryTests
 {
     [Test]
+    public void CompletedPrimaryWithIncompletePreviousOnlyRepairsBinding()
+    {
+        using var f = new RestoreFixture();
+        var result = f.Transaction().Run(f.Selection, f.SnapshotRoot, f.Intent);
+        string path = Path.Combine(f.Nand.OwnedRoot, "transactions", result.TransactionId.ToString("D") + ".json");
+        var completed = RestoreJournal.Decode(File.ReadAllBytes(path));
+        File.WriteAllBytes(path + ".previous", (completed with { Completed = false, BindingApplied = false }).Encode());
+        var recovered = f.Transaction().RecoverIncomplete().Single();
+        Assert.That(recovered.Status, Is.EqualTo(RestoreStatus.Completed));
+        Assert.That(recovered.CompletedBinding!.Generation, Is.EqualTo(f.Snapshot.Generation));
+        Assert.That(f.Bytes(), Is.EqualTo(new byte[] { 1, 2, 3 }));
+    }
+    [Test]
     public void JournalCannotRedirectBackupOrChangeCapturedSlotScope()
     {
         using var f = new RestoreFixture();

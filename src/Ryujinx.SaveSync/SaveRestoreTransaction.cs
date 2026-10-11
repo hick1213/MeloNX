@@ -84,6 +84,7 @@ public sealed class SaveRestoreTransaction
                 SaveRecordReference reference = snapshot.Records.Single(r => r.Key.Kind == slot.Key.Kind && r.Key.Index == slot.Key.Index);
                 string payload = Path.Combine(Path.GetDirectoryName(SnapshotPaths.Contained(snapshotRoot, reference.ManifestRelativePath))!, "payload");
                 using (var save = _repository.OpenWritable(slot.Key)) { save.ReplaceFrom(payload); save.Commit(); }
+                _repository.SynchronizeMutation(slot.Key);
                 Notify(RestoreStage.AfterCommit, slot.Key);
             }
             if (Stopping) return Rollback(journal, journalPath);
@@ -92,20 +93,32 @@ public sealed class SaveRestoreTransaction
             Notify(RestoreStage.AfterCompleted);
             return Outcome(RestoreStatus.Completed, transaction, bindingIntent);
         }
-        catch (Exception) when (!_notifying) { return Rollback(journal with { Completed = false }, journalPath); }
+        catch (Exception) when (!_notifying)
+        {
+            // A failed acknowledgment cannot undo a completed primary which
+            // reached disk. Make it durable/reconcile its sidecar or keep this
+            // game blocked; do not begin rollback after a terminal publication.
+            try
+            {
+                var published = RestoreJournal.Decode(SnapshotFiles.ReadManifest(journalPath));
+                if (!SameJournalScope(published, journal)) throw new SaveSyncException("identityMismatch");
+                if (published.Completed)
+                {
+                    ReconcilePrevious(Path.GetDirectoryName(journalPath)!);
+                    _durable.SyncTree(Path.GetDirectoryName(journalPath)!);
+                    return Outcome(RestoreStatus.Completed, published.TransactionId, published.BindingApplied ? null : published.BindingIntent);
+                }
+            }
+            catch { return Outcome(RestoreStatus.RecoveryRequired, journal.TransactionId, blocked: journal.Selection.TitleId); }
+            return Rollback(journal with { Completed = false }, journalPath);
+        }
     }
     public IReadOnlyList<RestoreOutcome> RecoverIncomplete()
     {
         string directory = Path.Combine(_root, "transactions");
         if (!Directory.Exists(directory)) return [];
         var results = new List<RestoreOutcome>();
-        foreach (string previous in Directory.EnumerateFiles(directory, "*.json.previous"))
-        {
-            string target = previous[..^".previous".Length];
-            RestoreJournal prior = RestoreJournal.Decode(SnapshotFiles.ReadManifest(previous));
-            if (Path.GetFileName(target) != prior.TransactionId.ToString("D") + ".json") throw new SaveSyncException("malformedSnapshot");
-            File.Move(previous, target, true); _durable.SyncTree(directory);
-        }
+        ReconcilePrevious(directory);
         foreach (string path in Directory.EnumerateFiles(directory, "*.json"))
         {
             RestoreJournal journal = RestoreJournal.Decode(SnapshotFiles.ReadManifest(path));
@@ -120,21 +133,51 @@ public sealed class SaveRestoreTransaction
     {
         if (transactionId == Guid.Empty) throw new SaveSyncException("malformedSnapshot");
         string path = Path.Combine(_root, "transactions", transactionId.ToString("D") + ".json");
+        ReconcilePrevious(Path.GetDirectoryName(path)!);
         var journal = RestoreJournal.Decode(SnapshotFiles.ReadManifest(path));
         if (!journal.Completed || journal.TransactionId != transactionId) throw new SaveSyncException("rollbackRequired");
         if (!journal.BindingApplied) _durable.WriteAtomic(path, (journal with { BindingApplied = true }).Encode());
+    }
+    private static bool SameJournalScope(RestoreJournal left, RestoreJournal right)
+    {
+        static RestoreJournal Immutable(RestoreJournal value) => value with {
+            Completed = false, RolledBack = false, BindingApplied = false,
+            Slots = value.Slots.Select(s => s with { MayHaveChanged = false }).ToArray()
+        };
+        return Immutable(left).Encode().AsSpan().SequenceEqual(Immutable(right).Encode());
+    }
+    private void ReconcilePrevious(string directory)
+    {
+        foreach (string previous in Directory.EnumerateFiles(directory, "*.json.previous"))
+        {
+            string target = previous[..^".previous".Length];
+            var prior = RestoreJournal.Decode(SnapshotFiles.ReadManifest(previous));
+            if (Path.GetFileName(target) != prior.TransactionId.ToString("D") + ".json") throw new SaveSyncException("malformedSnapshot");
+            if (File.Exists(target))
+            {
+                var current = RestoreJournal.Decode(SnapshotFiles.ReadManifest(target));
+                if (!SameJournalScope(prior, current) || prior.Completed && !current.Completed || prior.RolledBack && !current.RolledBack ||
+                    prior.BindingApplied && !current.BindingApplied || prior.Slots.Any(old => old.MayHaveChanged && !current.Slots.Single(s => s.Key == old.Key).MayHaveChanged))
+                    throw new SaveSyncException("rollbackRequired");
+                // The valid newer primary is the authoritative progress. This
+                // includes completed before binding and a conservative may-change
+                // marker whose parent-directory acknowledgment was interrupted.
+                _durable.SyncTree(directory);
+                File.Delete(previous); _durable.SyncTree(directory);
+            }
+            else { File.Move(previous, target); _durable.SyncTree(directory); }
+        }
     }
     private RestoreOutcome Rollback(RestoreJournal journal, string journalPath)
     {
         try
         {
-            SaveSelection local = _repository.Describe(journal.Selection.TitleId, "", journal.Selection.LocalUserId);
-            _repository.AuthorizeRecovery(local, journal.Slots.Select(s => s.Key).ToArray());
+            _repository.AuthorizeRecovery(journal.Selection, journal.Slots.Select(s => s.Key).ToArray());
             string backupRoot = SnapshotPaths.Contained(_root, journal.BackupRelativeRoot);
             if (journal.BackupManifest is not null) SnapshotFiles.Verify(backupRoot, journal.BackupManifest, CancellationToken.None);
             foreach (var slot in journal.Slots.Where(s => s.MayHaveChanged))
             {
-                if (!slot.OriginalExists) { _repository.DeleteExact(slot.Key); continue; }
+                if (!slot.OriginalExists) { _repository.DeleteExact(slot.Key); _repository.SynchronizeMutation(slot.Key); continue; }
                 var mapping = _repository.FindMapping(slot.Key);
                 if (mapping?.LocalSaveDataId != slot.OriginalId) throw new SaveSyncException("identityMismatch");
                 var reference = journal.BackupManifest!.Records.Single(r => r.Key == slot.Key);
@@ -142,6 +185,7 @@ public sealed class SaveRestoreTransaction
                 string payload = Path.Combine(Path.GetDirectoryName(recordPath)!, "payload");
                 using (var save = _repository.OpenWritable(slot.Key)) { save.ReplaceFrom(payload); save.Commit(); }
                 VerifyLogical(slot.Key, SnapshotJson.DecodeRecord(SnapshotFiles.ReadManifest(recordPath)));
+                _repository.SynchronizeMutation(slot.Key);
             }
             journal = journal with { RolledBack = true, Completed = false };
             _durable.WriteAtomic(journalPath, journal.Encode());
@@ -170,7 +214,7 @@ public sealed class SaveRestoreTransaction
             if (save.Read(file.Path, position, buffer.AsSpan(0, 1)) != 0 || Convert.ToHexString(hash.GetHashAndReset()).ToLowerInvariant() != file.Sha256)
                 throw new SaveSyncException("restoreFailed");
         }
-        var empty = entries.Where(e => e.IsDirectory && !entries.Any(c => c.Path.StartsWith(e.Path + "/", StringComparison.Ordinal))).Select(e => e.Path).ToHashSet(StringComparer.Ordinal);
+        var empty = SnapshotFiles.EmptyDirectories(entries, CancellationToken.None).ToHashSet(StringComparer.Ordinal);
         if (!empty.SetEquals(expected.EmptyDirectories)) throw new SaveSyncException("restoreFailed");
     }
 }

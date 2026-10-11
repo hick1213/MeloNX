@@ -163,4 +163,34 @@ final class SaveSyncEngineTests: XCTestCase {
         XCTAssertEqual(restores, 0)
         XCTAssertTrue(f.engine.versions.isEmpty)
     }
+
+    @MainActor func testPublicationCancellationAfterLastManifestResumesSameGeneration() async throws {
+        let f = SaveEngineFixture(); defer { f.dispose() }
+        await f.cloud.setPublicationFailure(true)
+        await f.engine.upload(f.game)
+        let first = await f.cloud.published!
+        await f.cloud.setPublicationFailure(false)
+        let restarted = SaveSyncEngine(gate: f.gate, native: f.worker, cloud: f.cloud, bindings: f.bindings, ownedRoot: f.root, installationID: UUID())
+        await restarted.upload(f.game)
+        let exports = await f.worker.exportCount, latest = await f.cloud.published!
+        XCTAssertEqual(exports, 1)
+        XCTAssertEqual(latest.generation, first.generation)
+        XCTAssertEqual(restarted.phase, .uploaded)
+    }
+    @MainActor func testQueuedSnapshotRetiresAfterCompletedRestoreAndNextUploadUsesNewParent() async throws {
+        let f = SaveEngineFixture(); defer { f.dispose() }
+        await f.cloud.setQueued(true); await f.engine.upload(f.game)
+        let old = await f.cloud.published!
+        let restored = try await f.installSnapshot()
+        await f.engine.prepareDownload(f.game)
+        await f.engine.restorePrepared(generation: restored.generation, allowUserBinding: false)
+        await f.cloud.setQueued(false)
+        let restarted = SaveSyncEngine(gate: f.gate, native: f.worker, cloud: f.cloud, bindings: f.bindings, ownedRoot: f.root, installationID: UUID())
+        await restarted.upload(f.game)
+        let latest = await f.cloud.published!, count = await f.worker.exportCount
+        XCTAssertEqual(count, 2)
+        XCTAssertEqual(latest.parent, restored.generation)
+        XCTAssertNotEqual(latest.generation, old.generation)
+        XCTAssertEqual(restarted.phase, .uploaded)
+    }
 }

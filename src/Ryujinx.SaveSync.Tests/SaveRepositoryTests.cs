@@ -19,6 +19,23 @@ namespace Ryujinx.SaveSync.Tests;
 public class SaveRepositoryTests
 {
     [Test]
+    public void ActualHostSynchronizationTouchesOnlySelectedSaveAndSingletonIndex()
+    {
+        using var f = SaveRepositoryFixture.Create([0], false);
+        var other = new SaveKey(0x200, f.LocalUserId, SaveKind.Account, 0);
+        f.CreateSave(other);
+        var otherRepository = f.NewRepository(new DurableFileStore(f.Root));
+        var otherSelection = otherRepository.Describe(0x200, "fixture", f.LocalUserId);
+        string otherRaw = f.PhysicalDir(otherSelection.Keys.Single());
+        File.CreateSymbolicLink(System.IO.Path.Combine(otherRaw, "do-not-follow"), System.IO.Path.Combine(f.Root, "outside-decoy"));
+        var repository = f.NewRepository(new DurableFileStore(f.Root));
+        var selection = repository.Describe(f.TitleId, "fixture", f.LocalUserId);
+        string payload = f.Payload("durability", new() { ["file"] = [1, 2, 3] });
+        using (var save = repository.OpenWritable(selection.Keys.Single())) { save.ReplaceFrom(payload); save.Commit(); }
+        Assert.DoesNotThrow(() => repository.SynchronizeMutation(selection.Keys.Single()));
+        Assert.That(new FileInfo(System.IO.Path.Combine(otherRaw, "do-not-follow")).LinkTarget, Is.Not.Null);
+    }
+    [Test]
     public void NonNormalIndexMetadataCannotBeSelectedAsCommittedSave()
     {
         var info = new SaveDataInfo { ProgramId = new ProgramId(0x100), Type = SaveDataType.Account,
@@ -166,9 +183,12 @@ public class SaveRepositoryTests
 internal sealed class TrackingDurable : IDurableStore
 {
     public List<string> Synced { get; } = [];
+    public Func<string, bool>? FailSyncPath { get; set; }
     public bool Fail { get; set; }
     public void WriteAtomic(string path, ReadOnlySpan<byte> bytes) { if (Fail) throw new IOException(); File.WriteAllBytes(path, bytes.ToArray()); }
-    public void SyncTree(string root) { if (Fail) throw new IOException(); Synced.Add(root); }
+    public void SyncFile(string path) => SyncTree(path);
+    public void SyncDirectory(string path) => SyncTree(path);
+    public void SyncTree(string root) { if (Fail || FailSyncPath?.Invoke(root) == true) throw new IOException(); Synced.Add(root); }
 }
 
 internal sealed class SaveRepositoryFixture : IDisposable
@@ -205,6 +225,7 @@ internal sealed class SaveRepositoryFixture : IDisposable
         if (device) CreateSave(new(TitleId, "shared", SaveKind.Device, 0));
         Repository = new LibHacSaveRepository(_fs, System.IO.Path.Combine(nand, "bis/user/save"), OwnedRoot, Durable, (_, _) => Control, () => AvailableBytes);
     }
+    public LibHacSaveRepository NewRepository(IDurableStore durable, Func<ulong, string, SaveCreateControl?>? loadControl = null) => new(_fs, System.IO.Path.Combine(Root, "nand/bis/user/save"), OwnedRoot, durable, loadControl ?? ((_, _) => Control), () => AvailableBytes);
     public static SaveRepositoryFixture Create(ushort[] accountIndexes, bool device) => new(accountIndexes, device);
     public void CreateSave(SaveKey key, SaveDataRank rank = SaveDataRank.Primary)
     {

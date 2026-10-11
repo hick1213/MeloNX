@@ -32,6 +32,12 @@ def profile(target):
     data = invoke(['security', 'cms', '-D', '-i', str(target / 'embedded.mobileprovision')]).stdout
     return plistlib.loads(data)
 
+def cloud_documents_allowed(requested, permitted):
+    if requested != ['CloudDocuments']:
+        return False
+    patterns = [permitted] if isinstance(permitted, str) else permitted
+    return isinstance(patterns, list) and any(isinstance(value, str) and fnmatch.fnmatchcase('CloudDocuments', value) for value in patterns)
+
 def inspect(target, expected_bundle, host):
     info = plistlib.loads((target / 'Info.plist').read_bytes())
     actual, provisioning = entitlements(target), profile(target)
@@ -49,7 +55,7 @@ def inspect(target, expected_bundle, host):
     cloud_keys = ['com.apple.developer.icloud-container-identifiers', 'com.apple.developer.ubiquity-container-identifiers']
     if host:
         services = actual.get('com.apple.developer.icloud-services', [])
-        checks['host_cloud_documents_only'] = services == ['CloudDocuments'] and 'CloudDocuments' in allowed.get('com.apple.developer.icloud-services', [])
+        checks['host_cloud_documents_only'] = cloud_documents_allowed(services, allowed.get('com.apple.developer.icloud-services'))
         for key in cloud_keys:
             requested = actual.get(key, [])
             permitted = allowed.get(key, [])
