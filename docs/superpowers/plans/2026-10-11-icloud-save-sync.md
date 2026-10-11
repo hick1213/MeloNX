@@ -449,7 +449,7 @@ try bindings.recordUploaded(key: key, cloudUID: exportIdentity.cloudUserID, gene
 
 **Files:** Create `src/MeloNX/MeloNX/UI/Main/SaveSync/GameSaveSyncView.swift`, `CloudSaveVersionsView.swift`, `SaveRestoreConfirmation.swift`（后两者同目录）；modify `src/MeloNX/MeloNX/UI/Main/GamesList/Elements/GameInfoSheet.swift`, `src/MeloNX/MeloNX/UI/Main/GamesList/GamesListView.swift`, `src/MeloNX/MeloNX/UI/Main/Settings/SettingsView.swift`, `src/MeloNX/MeloNX/UI/Main/ContentView.swift`。修改既有ScopeLease入口只在真实需要时提取共有接口，不展开其他格式功能。
 
-- [ ] 写UI-viewmodel测试：游戏选择→自动current-user→手动upload/download；没有文件或文件夹picker；noSave/busy/offline/quota/conflict/identityMismatch/rollbackRequired各有独立可操作反馈。正常唯一最新无需版本picker，冲突/foreign UID仅异常时显式选择。
+- [x] 写UI-viewmodel测试：游戏选择→自动current-user→手动upload/download；没有文件或文件夹picker；noSave/busy/offline/quota/conflict/identityMismatch/rollbackRequired各有独立可操作反馈。正常唯一最新无需版本picker，冲突/foreign UID仅异常时显式选择。
 
 Core新增`SaveSyncPresentation`合同`init(phase: SaveSyncPhase,error: SaveSyncError?)`，只读`canRetry: Bool,showsVersionChoice: Bool`，文案资源放app。以此测试恢复安全结束阶段；没有picker及真正按钮/tap/scene行为由后续真实UI gate验证，不能用一个恒定false的属性代替交互证据。
 
@@ -459,7 +459,7 @@ func testFinishingCannotExposeImmediateRetry() {
     XCTAssertFalse(view.canRetry)
 }
 ```
-- [ ] 游戏详情/菜单加入“iCloud 存档”；设置入口列已安装games供选择。停止并保存提示不能用pause按钮代替退出native线程。禁用重复任务按钮，finishing不能再按立即重试；恢复confirmation显示备份与替换说明，cloud成功文案只用uploaded状态。
+- [x] 游戏详情/菜单加入“iCloud 存档”；设置入口列已安装games供选择。停止并保存提示不能用pause按钮代替退出native线程。禁用重复任务按钮，finishing不能再按立即重试；恢复confirmation显示备份与替换说明，cloud成功文案只用uploaded状态。
 - [ ] 用已知fake adapter的Debug UI只检查布局和interaction，不宣称云端/游戏验收；真实用户save验证在Task9。检查小屏/横屏/VoiceOver基本可用，保留现主题/英文产品文本风格，Native真实进度不带API/handle实现细节。
 - [ ] 跑SaveSyncCore/OperationCore/ImportCore/JITCore及full iOS build；记录实际手机图像/互动证据，有设备断开则该UI gate保持未验收。提交Task8源文件。
 
@@ -467,12 +467,12 @@ func testFinishingCannotExposeImmediateRetry() {
 
 **Files:** modify `src/MeloNX/MeloNX/MeloNX.entitlements`, `src/MeloNX/MeloNX/Info.plist`, `src/MeloNX/MeloNX.xcodeproj/project.pbxproj`；create `distribution/ios/verify-save-sync-signing.sh`, `tests/ios/save-sync/README.md`和公开测试snapshot fixture清单。helper沿用原有权限，禁止把iCloud entitlement额外加给JIThelper。
 
-- [ ] 先只读核对实际开发团队KWP42AEP6Q是否授权CloudDocuments/container及已登录凭据，列明将改的com.hick.MeloNX App ID和container。沿任务已授权功能启用现有团队capability、关联iCloud.com.hick.MeloNX并生成新development profile；若权限/凭据缺失只记录确切阻塞和最小账号动作，继续完成本地测试，不购买服务/空间或切换团队。
-- [ ] host最小实际entitlement由Xcode/官方配置生成：CloudDocuments service、ubiquity-container-identifiers及对应iCloud-container-identifiers只用授权identifier；不为了文档同步开CloudKit数据库。Info `NSUbiquitousContainers`显示名称MeloNX、document scope/subfolder配置。签名verify比较embedded profile允许值与codesign实际entitlements；保持get-task-allow/increased-memory及既有bundle ID。
+- [x] 先只读核对实际开发团队KWP42AEP6Q是否授权CloudDocuments/container及已登录凭据，列明将改的com.hick.MeloNX App ID和container。沿任务已授权功能启用现有团队capability、关联iCloud.com.hick.MeloNX并生成新development profile；若权限/凭据缺失只记录确切阻塞和最小账号动作，继续完成本地测试，不购买服务/空间或切换团队。
+- [x] host最小实际entitlement由Xcode/官方配置生成：CloudDocuments service、ubiquity-container-identifiers及对应iCloud-container-identifiers只用授权identifier；不为了文档同步开CloudKit数据库。Info `NSUbiquitousContainers`显示名称MeloNX、document scope/subfolder配置。签名verify比较embedded profile允许值与codesign实际entitlements；保持get-task-allow/increased-memory及既有bundle ID。
 - [ ] 外部缓存/AOT/full app/helper build；全部单位/事务/临时LibHac集成通过。签名deep strict校验、LICENSE包含、NSZ生产exports保持、Release不含测试probe。先抓设备Documents元数据后原位更新，不卸载、不清NAND；devices目标hick及同iCloud第二设备，不在线不声明验收。
 - [ ] 实际游戏先在游戏内保存退出，再上传；观察所有cloud文件isUploaded、第二设备完全下载/hash一致、仅该游戏Account+Device记录；断网queued、quota错误、身份切换、双设备分支冲突实测。无真实存档样本则该gate未完成，不把假目录当游戏进度。
 - [ ] 第二设备合法local mapping可不同SaveDataId；恢复前备份，实际游戏启动确认进度；测试未完成journal重启回滚与completed只补绑定。再次核对keys/固件/其他游戏/原存档备份保留，并确认NSZ导入/启动gate及JIT绿色状态未回归。
-- [ ] 以一次最强模型 fresh-context reviewer检查整分支/不可信manifest、transaction durability、cloud propagation、UI资源寿命；仅一次作者实质修复，每项RED→GREEN并运行影响套件。保留真实proof、commit、未验收项；没有merge/push/publication请求。
+- [x] 以一次最强模型 fresh-context reviewer检查整分支/不可信manifest、transaction durability、cloud propagation、UI资源寿命；仅一次作者实质修复，每项RED→GREEN并运行影响套件。保留真实proof、commit、未验收项；没有merge/push/publication请求。
 
 ## Commands, Ownership and Handoff
 
@@ -523,3 +523,9 @@ signing verifier解析profile与实际entitlements，仅报告allowed identifier
 - Apple [Configuring iCloud services](https://developer.apple.com/documentation/xcode/configuring-icloud-services)；[container access](https://developer.apple.com/documentation/foundation/filemanager/url%28forubiquitycontaineridentifier%3A%29)；[upload confirmation and observer guidance](https://developer.apple.com/documentation/foundation/urlresourcekey/ubiquitousitemisuploadedkey)；[download requests](https://developer.apple.com/documentation/foundation/filemanager/startdownloadingubiquitousitem%28at%3A%29)。
 - Repo `Library.cs` initializer、`LibHacHorizonManager.RyujinxClient`、Account.UserId.ToLibHac；外部精确LibHac源 `Fs/Shim/SaveDataManagement.cs`（iterator/create/delete）、`Fs/Shim/SaveData.cs`（真实Fs.UserId版本）、`FsSrv/Sf/IFileSystemProxy.cs`、`FsSystem/DirectorySaveDataFileSystem.cs`（Initialize修复、Commit写句柄条件）。
 - 不调用 `LibHac.Fs.SaveData.MountSaveData(...LibHac.Account.Uid)` stub；不把NACP.SaveDataOwnerId误当attribute.ProgramId。此证据来自只读源码核对，非已执行的用户存档恢复试验。
+
+## Verification checkpoint after sole final review
+
+2026-10-11：一次独立整分支审查完成，8项Important作者修复已提交edd6c14f9；保存/恢复 .NET57、Swift48均实际通过，签名服务wildcard测试及旧候选实际entitlement/profile检查通过。外置盘AppleDouble源文件/项目元数据问题由d309730a7/ee8d88fca修正，最终Debug全量iOS/AOT签名构建及最新候选实际profile/entitlement检查已通过；7个save exports和NSZ生产exports存在，LICENSE文件保留。外部候选 `.local/build-tools/icloud-install-candidate-ee8d88fca` 含源commit和二进制摘要，130163892字节。Release测试probe排除检查仍在运行。
+
+Task8实机布局/点击/横屏/VoiceOver仍未验收。hick手机从可用转为paired但tunnel unavailable（CoreDevice4016），已请求连接解锁；真实游戏样本和同一iCloud第二设备仍未提供。Task9真实云上传、两设备下载/恢复、游戏内进度、离线/配额/冲突及新包JIT/NSZ实机回归均保持未验收。没有卸载应用、清理NAND或向云端写游戏存档。
