@@ -38,7 +38,7 @@ public class BufferCacheBindingTests
         Assert.That(first.Size, Is.EqualTo(4096));
     }
 
-    private sealed class TrackedMemory : MockVirtualMemoryManager, IVirtualMemoryManagerTracked
+    internal sealed class TrackedMemory : MockVirtualMemoryManager, IVirtualMemoryManagerTracked
     {
         private readonly byte[] _bytes = new byte[65536];
         private readonly MemoryTracking _tracking;
@@ -51,7 +51,7 @@ public class BufferCacheBindingTests
         public SmartMultiRegionHandle BeginSmartGranularTracking(ulong address, ulong size, ulong granularity, int id) => _tracking.BeginSmartGranularTracking(address, size, granularity, id);
     }
 
-    private sealed class BufferRenderer : IRenderer
+    internal class BufferRenderer : IRenderer
     {
         private ulong _next;
         public event EventHandler<ScreenCaptureImageInfo>? ScreenCaptured { add {} remove {} }
@@ -66,7 +66,7 @@ public class BufferCacheBindingTests
         public IImageArray CreateImageArray(int size, bool isBuffer) => throw new NotSupportedException();
         public IProgram CreateProgram(ShaderSource[] shaders, ShaderInfo info) => throw new NotSupportedException();
         public ISampler CreateSampler(SamplerCreateInfo info) => throw new NotSupportedException();
-        public ITexture CreateTexture(TextureCreateInfo info) => throw new NotSupportedException();
+        public virtual ITexture CreateTexture(TextureCreateInfo info) => throw new NotSupportedException();
         public ITextureArray CreateTextureArray(int size, bool isBuffer) => throw new NotSupportedException();
         public bool PrepareHostMapping(nint address, ulong size) => false;
         public void CreateSync(ulong id, bool strict) {}
