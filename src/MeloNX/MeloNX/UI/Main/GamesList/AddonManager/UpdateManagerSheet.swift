@@ -8,6 +8,7 @@
 
 import SwiftUI
 import MeloNXOperationCore
+import MeloNXImportCore
 import UniformTypeIdentifiers
 import Combine
 
@@ -19,6 +20,9 @@ struct UpdateManagerSheet: View {
     @Environment(\.dismiss) var dismiss
     @ObservedObject private var nszImport = NSZImportCoordinator.shared
     @State private var ownsNSZImport = false
+    @State private var importError: String?
+    @State private var importNote: String?
+    @State private var needsSaveRetry = false
     
     class UpdateItem: Identifiable, ObservableObject {
         let id = UUID()
@@ -39,6 +43,13 @@ struct UpdateManagerSheet: View {
     var body: some View {
         NavigationView {
             List {
+                if let importError {
+                    Section {
+                        Text(importError).foregroundStyle(.red)
+                        if needsSaveRetry { Button("重试保存列表", action: retrySaveJSON) }
+                    }
+                }
+                if let importNote { Section { Text(importNote).foregroundStyle(.secondary) } }
                 if updates.isEmpty {
                     emptyStateView
                 } else {
@@ -226,7 +237,8 @@ struct UpdateManagerSheet: View {
             )
             let defaultData: [String: Any] = ["selected": "", "paths": [String]()]
             let data = try JSONSerialization.data(withJSONObject: defaultData, options: .prettyPrinted)
-            try data.write(to: jsonURL)
+            try data.write(to: jsonURL, options: .atomic)
+            needsSaveRetry = false
             updates = []
         } catch {
             print("Failed to create default JSON: \(error)")
@@ -236,6 +248,8 @@ struct UpdateManagerSheet: View {
     private func handleFileImport(result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
+            importError = nil
+            importNote = nil
             if urls.contains(where: { $0.pathExtension.lowercased() == "nsz" }) {
                 guard let game, let applicationID = UInt64(game.titleId, radix: 16),
                       urls.allSatisfy({ $0.pathExtension.lowercased() == "nsz" }) else {
@@ -249,7 +263,7 @@ struct UpdateManagerSheet: View {
                 }) { _ in ownsNSZImport = false }
                 return
             }
-            guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }) else { return }
+            guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }, onFailure: { importError = $0 }) else { return }
             defer { try? operation.finish(workerHasEnded: true) }
             var newUpdates: [UpdateItem] = []
             
@@ -266,24 +280,22 @@ struct UpdateManagerSheet: View {
                 }
                 
                 do {
-                    let fileManager = FileManager.default
-                    let gameUpdatesDirectory = URL.documentsDirectory
-                        .appendingPathComponent("updates")
-                        .appendingPathComponent(game.titleId)
                     
-                    try fileManager.createDirectory(at: gameUpdatesDirectory, withIntermediateDirectories: true)
                     
                     let filename = selectedURL.lastPathComponent
                     let relativePath = "updates/\(game.titleId)/\(filename)"
                     let destinationURL = URL.documentsDirectory.appendingPathComponent(relativePath)
                     
                     guard !updates.contains(where: { $0.relativePath == relativePath }) else {
-                        print("Update already exists: \(filename)")
+                        importError = "此更新已经添加：\(filename)"
                         continue
                     }
                     
-                    try? fileManager.removeItem(at: destinationURL)
-                    try fileManager.copyItem(at: selectedURL, to: destinationURL)
+                    try AddonPackageCopy.copy(source: selectedURL, destination: destinationURL) {
+                        guard ["nsp", "xci"].contains(selectedURL.pathExtension.lowercased()) else {
+                            throw NSError(domain: "MeloNXAddon", code: 2, userInfo: [NSLocalizedDescriptionKey: "请选择 NSP 或 XCI 更新包。"])
+                        }
+                    }
                     
                     newUpdates.append(UpdateItem(
                         url: destinationURL,
@@ -292,7 +304,7 @@ struct UpdateManagerSheet: View {
                         isSelected: false
                     ))
                 } catch {
-                    print("Error copying update file: \(error)")
+                    importError = "\(selectedURL.lastPathComponent)：\(error.localizedDescription)"
                 }
             }
             
@@ -304,14 +316,16 @@ struct UpdateManagerSheet: View {
             
             updates.append(contentsOf: newUpdates)
             saveJSON()
+            if importError == nil { importNote = "已添加 \(newUpdates.count) 个更新文件。" }
             ryujinxController.loadGames()
         case .failure(let error):
-            print("File import failed: \(error.localizedDescription)")
+            let failure = error as NSError
+            if failure.domain != "FileImporterManager" || failure.code != 2 { importError = error.localizedDescription }
         }
     }
     
     private func toggleSelection(_ update: UpdateItem) {
-        guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }) else { return }
+        guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }, onFailure: { importError = $0 }) else { return }
         defer { try? operation.finish(workerHasEnded: true) }
         let nowSelected = !update.isSelected
         updates.forEach { $0.isSelected = $0.relativePath == update.relativePath && nowSelected }
@@ -323,7 +337,7 @@ struct UpdateManagerSheet: View {
     }
     
     private func removeUpdate(at indexSet: IndexSet) {
-        guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }) else { return }
+        guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }, onFailure: { importError = $0 }) else { return }
         defer { try? operation.finish(workerHasEnded: true) }
         guard let index = indexSet.first else { return }
         
@@ -339,6 +353,13 @@ struct UpdateManagerSheet: View {
         }
     }
     
+    private func retrySaveJSON() {
+        guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }, onFailure: { importError = $0 }) else { return }
+        defer { try? operation.finish(workerHasEnded: true) }
+        importError = nil
+        saveJSON()
+    }
+
     private func saveJSON() {
         guard let jsonURL = jsonURL else { return }
         
@@ -348,9 +369,11 @@ struct UpdateManagerSheet: View {
                 "selected": updates.first(where: { $0.isSelected })?.relativePath ?? ""
             ]
             let data = try JSONSerialization.data(withJSONObject: jsonDict, options: .prettyPrinted)
-            try data.write(to: jsonURL)
+            try data.write(to: jsonURL, options: .atomic)
+            needsSaveRetry = false
         } catch {
-            print("Failed to save JSON: \(error)")
+            needsSaveRetry = true
+            importError = "导入列表保存失败：\(error.localizedDescription)"
         }
     }
 }

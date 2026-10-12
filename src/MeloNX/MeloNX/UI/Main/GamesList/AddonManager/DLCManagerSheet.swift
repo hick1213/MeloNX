@@ -7,6 +7,7 @@
 
 import SwiftUI
 import MeloNXOperationCore
+import MeloNXImportCore
 import UniformTypeIdentifiers
 import Combine
 
@@ -18,6 +19,9 @@ struct DLCManagerSheet: View {
     @Environment(\.dismiss) var dismiss
     @ObservedObject private var nszImport = NSZImportCoordinator.shared
     @State private var ownsNSZImport = false
+    @State private var importError: String?
+    @State private var importNote: String?
+    @State private var needsSaveRetry = false
     
     class DLCItem: Identifiable, ObservableObject {
         let id = UUID()
@@ -40,6 +44,13 @@ struct DLCManagerSheet: View {
     var body: some View {
         NavigationView {
             List {
+                if let importError {
+                    Section {
+                        Text(importError).foregroundStyle(.red)
+                        if needsSaveRetry { Button("重试保存列表", action: retrySaveJSON) }
+                    }
+                }
+                if let importNote { Section { Text(importNote).foregroundStyle(.secondary) } }
                 if dlcs.isEmpty {
                     emptyStateView
                 } else {
@@ -218,7 +229,8 @@ struct DLCManagerSheet: View {
                 withIntermediateDirectories: true
             )
             let data = try JSONEncoder().encode([DownloadableContentContainer]())
-            try data.write(to: jsonURL)
+            try data.write(to: jsonURL, options: .atomic)
+            needsSaveRetry = false
             dlcs = []
         } catch {
             print("Failed to create default DLC JSON: \(error)")
@@ -228,6 +240,8 @@ struct DLCManagerSheet: View {
     private func handleFileImport(result: Result<[URL], Error>) {
         switch result {
         case .success(let urls):
+            importError = nil
+            importNote = nil
             if urls.contains(where: { $0.pathExtension.lowercased() == "nsz" }) {
                 guard let game, let applicationID = UInt64(game.titleId, radix: 16),
                       urls.allSatisfy({ $0.pathExtension.lowercased() == "nsz" }) else {
@@ -241,7 +255,7 @@ struct DLCManagerSheet: View {
                 }) { _ in ownsNSZImport = false }
                 return
             }
-            guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }) else { return }
+            guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }, onFailure: { importError = $0 }) else { return }
             defer { try? operation.finish(workerHasEnded: true) }
             var newDLCs: [DLCItem] = []
             
@@ -258,29 +272,23 @@ struct DLCManagerSheet: View {
                 }
                 
                 do {
-                    let fileManager = FileManager.default
-                    let gameDLCDirectory = URL.documentsDirectory
-                        .appendingPathComponent("dlc")
-                        .appendingPathComponent(game.titleId)
                     
-                    try fileManager.createDirectory(at: gameDLCDirectory, withIntermediateDirectories: true)
                     
                     let filename = selectedURL.lastPathComponent
                     let relativePath = "dlc/\(game.titleId)/\(filename)"
                     let destinationURL = URL.documentsDirectory.appendingPathComponent(relativePath)
                     
                     guard !dlcs.contains(where: { $0.relativePath == relativePath }) else {
-                        print("DLC already exists: \(filename)")
+                        importError = "此 DLC 已经添加：\(filename)"
                         continue
                     }
                     
-                    try? fileManager.removeItem(at: destinationURL)
-                    try fileManager.copyItem(at: selectedURL, to: destinationURL)
-                    
-                    let ncaList = Ryujinx.getDlcNcaList(titleId: game.titleId, path: destinationURL.path)
-                    guard !ncaList.isEmpty else {
-                        print("No valid DLC content found for: \(filename)")
-                        continue
+                    let ncaList = Ryujinx.getDlcNcaList(titleId: game.titleId, path: selectedURL.path)
+                    try AddonPackageCopy.copy(source: selectedURL, destination: destinationURL) {
+                        guard !ncaList.isEmpty else {
+                            throw NSError(domain: "MeloNXAddon", code: 1, userInfo: [NSLocalizedDescriptionKey:
+                                "未找到属于当前游戏的 DLC。若这是 [UPD] 更新包，请从“更新管理”导入；也请确认文件完整且所需 keys 已安装。"])
+                        }
                     }
                     
                     newDLCs.append(DLCItem(
@@ -291,7 +299,7 @@ struct DLCManagerSheet: View {
                         isEnabled: false
                     ))
                 } catch {
-                    print("Error copying DLC file: \(error)")
+                    importError = "\(selectedURL.lastPathComponent)：\(error.localizedDescription)"
                 }
             }
             
@@ -303,15 +311,17 @@ struct DLCManagerSheet: View {
             
             dlcs.append(contentsOf: newDLCs)
             saveJSON()
+            if importError == nil { importNote = "已添加 \(newDLCs.count) 个 DLC 文件。" }
             ryujinxController.loadGames()
             
         case .failure(let error):
-            print("File import failed: \(error.localizedDescription)")
+            let failure = error as NSError
+            if failure.domain != "FileImporterManager" || failure.code != 2 { importError = error.localizedDescription }
         }
     }
     
     private func toggleDLC(_ dlc: DLCItem) {
-        guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }) else { return }
+        guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }, onFailure: { importError = $0 }) else { return }
         defer { try? operation.finish(workerHasEnded: true) }
         guard let index = dlcs.firstIndex(where: { $0.relativePath == dlc.relativePath }) else { return }
         dlcs[index].isEnabled.toggle()
@@ -323,7 +333,7 @@ struct DLCManagerSheet: View {
     }
     
     private func removeDLC(at indexSet: IndexSet) {
-        guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }) else { return }
+        guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }, onFailure: { importError = $0 }) else { return }
         defer { try? operation.finish(workerHasEnded: true) }
         guard let index = indexSet.first else { return }
         
@@ -339,6 +349,13 @@ struct DLCManagerSheet: View {
         }
     }
     
+    private func retrySaveJSON() {
+        guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }, onFailure: { importError = $0 }) else { return }
+        defer { try? operation.finish(workerHasEnded: true) }
+        importError = nil
+        saveJSON()
+    }
+
     private func saveJSON() {
         guard let jsonURL = jsonURL else { return }
 
@@ -356,9 +373,11 @@ struct DLCManagerSheet: View {
             let encoder = JSONEncoder()
             encoder.outputFormatting = .prettyPrinted
             let data = try encoder.encode(containers)
-            try data.write(to: jsonURL)
+            try data.write(to: jsonURL, options: .atomic)
+            needsSaveRetry = false
         } catch {
-            print("Failed to save DLC JSON: \(error)")
+            needsSaveRetry = true
+            importError = "导入列表保存失败：\(error.localizedDescription)"
         }
     }
 }

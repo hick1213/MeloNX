@@ -3,8 +3,12 @@ import MeloNXOperationCore
 
 @MainActor enum LocalOperations {
     static let shared = LocalOperationGate()
-    static func beginImport(gameID: UInt64? = nil) -> LocalOperationLease? {
+    static func beginImport(gameID: UInt64? = nil, onFailure: ((String) -> Void)? = nil) -> LocalOperationLease? {
         do { return try shared.acquire(.packageImport, gameID: gameID) }
-        catch { AppAlerts.showSyncAlert(title: "Operation unavailable", message: error.localizedDescription); return nil }
+        catch {
+            if let onFailure { onFailure(error.localizedDescription) }
+            else { AppAlerts.showSyncAlert(title: "Operation unavailable", message: error.localizedDescription) }
+            return nil
+        }
     }
 }
