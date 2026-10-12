@@ -89,10 +89,11 @@ import MeloNXOperationCore
                   !RyujinxController.shared.isRunning.hasStarted(), canRetry else { return false }
             let provider = NativeSettingsManager.shared.jitProvider(JITProvider.disabled).value
             let preference = UserDefaults.standard.object(forKey: "preferBuiltInJIT") as? Bool
-            let builtIn = JITCompatibilityPolicy.useBuiltIn(preference: preference, externalProviderSelected: provider != .disabled)
+            let hasPairing = (try? JITKeychainPairingStore.shared.load()) != nil
+            let builtIn = JITCompatibilityPolicy.useBuiltIn(preference: preference, externalProviderSelected: provider != .disabled, pairedBuiltInAvailable: hasPairing)
             let ready: Bool
             if builtIn, unavailableReason == nil {
-                guard (try? JITKeychainPairingStore.shared.load()) != nil else {
+                guard hasPairing else {
                     message = "请先完成内置 JIT 配对并连接 LocalDevVPN。"
                     return false
                 }
@@ -108,7 +109,8 @@ import MeloNXOperationCore
     private func recordAutomaticReadiness() {
         let evidence: [String: Any] = ["ready": RyujinxController.shared.isJITEnabled,
             "phase": phase.rawValue, "pid": ProcessInfo.processInfo.processIdentifier,
-            "uptime": ProcessInfo.processInfo.systemUptime]
+            "uptime": ProcessInfo.processInfo.systemUptime,
+            "pairingAvailable": (try? JITKeychainPairingStore.shared.load()) != nil]
         let directory = URL.logsFolderURL
         try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         if let data = try? JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]) {

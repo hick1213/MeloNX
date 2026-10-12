@@ -1,6 +1,6 @@
 public enum JITCompatibilityPolicy {
-    public static func useBuiltIn(preference: Bool?, externalProviderSelected: Bool) -> Bool {
-        preference ?? !externalProviderSelected
+    public static func useBuiltIn(preference: Bool?, externalProviderSelected: Bool, pairedBuiltInAvailable: Bool = false) -> Bool {
+        preference ?? (pairedBuiltInAvailable || !externalProviderSelected)
     }
     public static func useLegacyMapping(dynamicCodeSigning: Bool, appOnMac: Bool, majorOS: Int) -> Bool {
         dynamicCodeSigning || appOnMac || majorOS < 19

@@ -31,4 +31,9 @@ final class JITReviewRegressions: XCTestCase {
         XCTAssertFalse(JITCompatibilityPolicy.useBuiltIn(preference: false, externalProviderSelected: false))
         XCTAssertTrue(JITCompatibilityPolicy.useLegacyMapping(dynamicCodeSigning: true, appOnMac: false, majorOS: 27))
     }
+    func testSavedBuiltInPairingWinsOverLegacyProviderWhenPreferenceWasNeverSaved() {
+        XCTAssertTrue(JITCompatibilityPolicy.useBuiltIn(preference: nil, externalProviderSelected: true, pairedBuiltInAvailable: true))
+        XCTAssertFalse(JITCompatibilityPolicy.useBuiltIn(preference: false, externalProviderSelected: true, pairedBuiltInAvailable: true))
+        XCTAssertFalse(JITCompatibilityPolicy.useBuiltIn(preference: nil, externalProviderSelected: true, pairedBuiltInAvailable: false))
+    }
 }

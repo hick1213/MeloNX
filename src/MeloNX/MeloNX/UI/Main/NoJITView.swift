@@ -137,7 +137,8 @@ struct NoJITView: View {
             var ready = false
             let provider = nativeSettingsManager.jitProvider(JITProvider.disabled).value
             let preference = UserDefaults.standard.object(forKey: "preferBuiltInJIT") as? Bool
-            let useBuiltIn = JITCompatibilityPolicy.useBuiltIn(preference: preference, externalProviderSelected: provider != .disabled)
+            let useBuiltIn = JITCompatibilityPolicy.useBuiltIn(preference: preference, externalProviderSelected: provider != .disabled,
+                pairedBuiltInAvailable: (try? JITKeychainPairingStore.shared.load()) != nil)
             if useBuiltIn, coordinator.unavailableReason == nil {
                 guard (try? JITKeychainPairingStore.shared.load()) != nil else {
                     status = "请先打开内置 JIT 设置，完成配对并连接 LocalDevVPN。"

@@ -48,7 +48,7 @@ struct BuiltInJITSetupView: View {
             }
             Section("连接与验证") {
                 Button("检查连接并准备开发者镜像") { Task { await coordinator.prepare() } }
-                Button("获取 JIT 并验证代码执行") { Task { _ = await coordinator.enable() } }
+                Button("获取 JIT 并验证代码执行") { preferBuiltIn = true; Task { _ = await coordinator.enable() } }
                 Button("重置开发者镜像缓存") { Task { await coordinator.resetDDI() } }
             }.disabled(!coordinator.canRetry || coordinator.unavailableReason != nil || !saved)
             if !errorMessage.isEmpty { Section { Text(errorMessage).foregroundStyle(.red) } }
