@@ -60,13 +60,14 @@ struct PerformanceOverlayView: View {
                 UIDevice.current.isBatteryMonitoringEnabled = true
                 batteryLevel = Int(UIDevice.current.batteryLevel * 100)
                 
-                NotificationCenter.default.addObserver(
-                    forName: UIDevice.batteryLevelDidChangeNotification,
-                    object: nil,
-                    queue: .main
-                ) { _ in
-                    batteryLevel = Int(UIDevice.current.batteryLevel * 100)
-                }
+                if nativeSettings.performanceRam(true).bool { memorymonitor.start() }
+            }
+            .onDisappear { memorymonitor.stop() }
+            .onChange(of: nativeSettings.performanceRam(true).bool) { shown in
+                if shown { memorymonitor.start() } else { memorymonitor.stop() }
+            }
+            .onReceive(NotificationCenter.default.publisher(for: UIDevice.batteryLevelDidChangeNotification)) { _ in
+                batteryLevel = Int(UIDevice.current.batteryLevel * 100)
             }
     }
 }

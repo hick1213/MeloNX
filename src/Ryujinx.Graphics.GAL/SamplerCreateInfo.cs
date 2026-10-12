@@ -48,7 +48,7 @@ namespace Ryujinx.Graphics.GAL
             MinLod = minLod;
             MaxLod = maxLod;
             MipLodBias = mipLodBias;
-            MaxAnisotropy = maxAnisotropy;
+            MaxAnisotropy = float.IsFinite(maxAnisotropy) && maxAnisotropy >= 1f ? maxAnisotropy : 1f;
         }
 
         public static SamplerCreateInfo Create(MinFilter minFilter, MagFilter magFilter)

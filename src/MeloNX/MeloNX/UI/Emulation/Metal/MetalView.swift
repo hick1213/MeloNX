@@ -11,8 +11,7 @@ import MeloNXOperationCore
 
 class MetalView: MTKView {
     @ObservedObject var menuViewShower: InGameConfigView_MenuView = .shared
-    private var activeTouches: [UITouch] = []
-    private var ignoredTouches: Set<UITouch> = []
+    private var touchIdentifiers = StableTouchIdentifiers<ObjectIdentifier>()
 
     private var aspectRatio: AspectRatio = .fixed16x9
 
@@ -40,116 +39,56 @@ class MetalView: MTKView {
         return point
     }
 
-    private func getNextAvailableIndex() -> Int {
-        return activeTouches.endIndex
-    }
-
     override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesBegan(touches, with: event)
-        
         menuViewShower.triggerButton()
-        
-        let disabled = UserDefaults.standard.bool(forKey: "disableTouch")
-        guard !disabled else { return }
-        
+        guard !UserDefaults.standard.bool(forKey: "disableTouch") else { return }
         setAspectRatio()
-        
         for touch in touches {
-            let location = touch.location(in: self)
-            let index = getNextAvailableIndex()
-            activeTouches.append(touch)
-            print("Touch location: \(location)")
-            let transformed = transformToTargetCoordinates(location)
-            Ryujinx.touchBegan(transformed, index: index)
-        }
-    }
-
-    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
-        super.touchesEnded(touches, with: event)
-        
-        
-        let disabled = UserDefaults.standard.bool(forKey: "disableTouch")
-        guard !disabled else {
-            for touch in touches {
-                ignoredTouches.remove(touch)
-                if let index = activeTouches.firstIndex(of: touch) {
-                    activeTouches.remove(at: index)
-                }
-            }
-            return
-        }
-        
-        for touch in touches {
-            if ignoredTouches.remove(touch) != nil {
-                continue
-            }
-            
-            if let touchIndex = activeTouches.firstIndex(where: { $0 == touch }) {
-                Ryujinx.touchEnded(index: touchIndex)
-                
-                if let arrayIndex = activeTouches.firstIndex(of: touch) {
-                    activeTouches.remove(at: arrayIndex)
-                }
-            }
+            let index = touchIdentifiers.begin(ObjectIdentifier(touch))
+            let location = transformToTargetCoordinates(touch.location(in: self))
+            Ryujinx.touchBegan(location, index: index)
         }
     }
 
     override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesMoved(touches, with: event)
-        
         menuViewShower.triggerButton()
-        
-        let disabled = UserDefaults.standard.bool(forKey: "disableTouch")
-        guard !disabled else { return }
-        
-        setAspectRatio()
-        
-        for touch in touches {
-            if ignoredTouches.contains(touch), !activeTouches.contains(touch) {
-                continue
-            }
-            
-            
-            guard let touchIndex = activeTouches.firstIndex(where: { $0 == touch }) else {
-                continue
-            }
-            
-            let location = touch.location(in: self)
-            let transformed = transformToTargetCoordinates(location)
-            Ryujinx.touchMoved(transformed, index: touchIndex)
+        guard !UserDefaults.standard.bool(forKey: "disableTouch") else {
+            resetTouchTracking()
+            return
         }
+        setAspectRatio()
+        for touch in touches {
+            guard let index = touchIdentifiers.identifier(for: ObjectIdentifier(touch)) else { continue }
+            let location = transformToTargetCoordinates(touch.location(in: self))
+            Ryujinx.touchMoved(location, index: index)
+        }
+    }
+
+    override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent?) {
+        super.touchesEnded(touches, with: event)
+        endTouches(touches)
     }
 
     override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent?) {
         super.touchesCancelled(touches, with: event)
-        let disabled = UserDefaults.standard.bool(forKey: "disableTouch")
-        guard !disabled else {
-            for touch in touches {
-                ignoredTouches.remove(touch)
-                if let index = activeTouches.firstIndex(of: touch) {
-                    activeTouches.remove(at: index)
-                }
-            }
-            return
-        }
-        
+        endTouches(touches)
+    }
+
+    private func endTouches(_ touches: Set<UITouch>) {
+        // End already-active fingers even when touch input was disabled mid-gesture.
         for touch in touches {
-            if ignoredTouches.remove(touch) != nil {
-                continue
-            }
-            
-            if let touchIndex = activeTouches.firstIndex(where: { $0 == touch }) {
-                Ryujinx.touchEnded(index: touchIndex)
-                activeTouches.remove(at: touchIndex)
+            if let index = touchIdentifiers.end(ObjectIdentifier(touch)) {
+                Ryujinx.touchEnded(index: index)
             }
         }
     }
-    
 
     func resetTouchTracking() {
-        activeTouches.removeAll()
-        ignoredTouches.removeAll()
+        for index in touchIdentifiers.reset() { Ryujinx.touchEnded(index: index) }
     }
+
 }
 
 

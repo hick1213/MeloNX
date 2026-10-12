@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup><IsPackable>false</IsPackable><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><AllowUnsafeBlocks>true</AllowUnsafeBlocks><DefaultItemExcludes>$(DefaultItemExcludes);**/._*</DefaultItemExcludes></PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="NUnit" />
+    <PackageReference Include="NUnit3TestAdapter" />
+    <Compile Include="../Ryujinx.Cpu/LightningJit/Cache/CacheMemoryAllocator.cs" Link="Production/CacheMemoryAllocator.cs" />
+    <Compile Include="../Ryujinx.Cpu/LightningJit/Cache/DualMappedNoWxCache.cs" Link="Production/DualMappedNoWxCache.cs" />
+    <Compile Include="../Ryujinx.Cpu/LightningJit/TranslatorExecutionLifetime.cs" Link="Production/TranslatorExecutionLifetime.cs" />
+    <Compile Include="../Ryujinx.Cpu/LightningJit/TranslatedFunction.cs" Link="Production/TranslatedFunction.cs" />
+  </ItemGroup>
+</Project>

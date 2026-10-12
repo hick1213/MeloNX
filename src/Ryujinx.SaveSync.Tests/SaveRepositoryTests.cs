@@ -209,7 +209,7 @@ internal sealed class SaveRepositoryFixture : IDisposable
         string nand = System.IO.Path.Combine(Root, "nand"); Directory.CreateDirectory(nand);
         _rootFs = new LocalFileSystem();
         _rootFs.Initialize(nand, LocalFileSystem.PathMode.DefaultCaseSensitivity, true).ThrowIfFailure();
-        var horizon = new Horizon(new HorizonConfiguration());
+        var horizon = new LibHac.Horizon(new HorizonConfiguration());
         var serverClient = horizon.CreatePrivilegedHorizonClient();
         var server = new FileSystemServer(serverClient);
         var keys = new KeySet();

@@ -184,6 +184,7 @@ namespace Ryujinx.Library
         [UnmanagedCallersOnly(EntryPoint = "begin_emulation")]
         public static void BeginEmulation()
         {
+            NativeTouchDriver.ResetTouches();
             Volatile.Write(ref _runSession, new EmulationRunSession());
             Console.WriteLine("Emulation run armed.");
         }
@@ -191,6 +192,7 @@ namespace Ryujinx.Library
         [UnmanagedCallersOnly(EntryPoint = "stop_emulation")]
         public static void StopEmulation()
         {
+            NativeTouchDriver.ResetTouches();
             Console.WriteLine("Emulation stop requested.");
             Volatile.Read(ref _runSession).RequestStop();
         }

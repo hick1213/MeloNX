@@ -77,7 +77,7 @@ namespace Ryujinx.Graphics.Gpu.Image
                 mipLodBias,
                 Math.Min(maxRequestedAnisotropy, maxSupportedAnisotropy)));
 
-            if (GraphicsConfig.MaxAnisotropy >= 0 && GraphicsConfig.MaxAnisotropy <= 16 && (minFilter == MinFilter.LinearMipmapNearest || minFilter == MinFilter.LinearMipmapLinear))
+            if (GraphicsConfig.MaxAnisotropy >= 1 && GraphicsConfig.MaxAnisotropy <= 16 && (minFilter == MinFilter.LinearMipmapNearest || minFilter == MinFilter.LinearMipmapLinear))
             {
                 maxRequestedAnisotropy = GraphicsConfig.MaxAnisotropy;
 

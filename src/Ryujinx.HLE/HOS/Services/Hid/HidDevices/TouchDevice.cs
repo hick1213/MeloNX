@@ -14,14 +14,20 @@ namespace Ryujinx.HLE.HOS.Services.Hid
 
             ref TouchScreenState previousEntry = ref lifo.GetCurrentEntryRef();
 
+            TouchScreenState newState = CreateState(points, previousEntry.SamplingNumber + 1, Active);
+            lifo.Write(ref newState);
+        }
+
+        internal static TouchScreenState CreateState(ReadOnlySpan<TouchPoint> points, ulong samplingNumber, bool active)
+        {
             TouchScreenState newState = new()
             {
-                SamplingNumber = previousEntry.SamplingNumber + 1,
+                SamplingNumber = samplingNumber,
             };
 
-            if (Active)
+            if (active)
             {
-                newState.TouchesCount = points.Length;
+                newState.TouchesCount = Math.Min(points.Length, newState.Touches.Length);
 
                 Span<TouchState> touchesSpan = newState.Touches.AsSpan();
                 
@@ -36,7 +42,7 @@ namespace Ryujinx.HLE.HOS.Services.Hid
                         Attribute = pi.Attribute,
                         X = pi.X,
                         Y = pi.Y,
-                        FingerId = (uint)i,
+                        FingerId = pi.FingerId ?? (uint)i,
                         DiameterX = pi.DiameterX,
                         DiameterY = pi.DiameterY,
                         RotationAngle = pi.Angle,
@@ -44,7 +50,7 @@ namespace Ryujinx.HLE.HOS.Services.Hid
                 }
             }
 
-            lifo.Write(ref newState);
+            return newState;
         }
     }
 }

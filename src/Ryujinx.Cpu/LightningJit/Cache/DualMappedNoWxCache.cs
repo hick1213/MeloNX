@@ -1,6 +1,7 @@
 using Ryujinx.Common;
 using Ryujinx.Memory;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.Versioning;
 using System.Threading;
@@ -14,7 +15,7 @@ namespace Ryujinx.Cpu.LightningJit.Cache
         private const int CodeAlignment = 4; // Bytes.
         private static readonly ulong SharedCacheSize = DualMappedJitAllocator.hasTXM ? (ulong)512 * 1024 * 1024 : 1024 * 1024 * 1024;
 
-        private class MemoryCache : IDisposable
+        private class MemoryCache
         {
             private readonly DualMappedJitAllocator _allocator;
             private readonly CacheMemoryAllocator _cacheAllocator;
@@ -72,56 +73,44 @@ namespace Ryujinx.Cpu.LightningJit.Cache
                 return checked(codeSize + (CodeAlignment - 1)) & ~(CodeAlignment - 1);
             }
 
-            protected virtual void Dispose(bool disposing)
-            {
-                if (disposing)
-                {
-                    _allocator.Dispose();
-                    _cacheAllocator.Clear();
-                }
-            }
-
-            public void Dispose()
-            {
-                Dispose(disposing: true);
-                GC.SuppressFinalize(this);
-            }
+            public void Free(int offset, int size) => _cacheAllocator.Free(offset, size);
         }
 
         private readonly Translator _translator;
-        private MemoryCache _sharedCache;
-        private static DualMappedJitAllocator _sharedCacheAlloc;
-        private readonly Lock _lock = new();
+        private static MemoryCache _sharedCache;
+        private static readonly Lock _lock = new();
+        private readonly List<(int Offset, int Size)> _allocations = [];
+        private bool _disposed;
 
         public DualMappedNoWxCache(Translator translator)
         {
             _translator = translator;
-            _sharedCache = new(_sharedCacheAlloc, SharedCacheSize);
+
         }
 
-        public static void InitMemoryCache() 
+        public static void InitMemoryCache()
         {
-            if (_sharedCacheAlloc != null)
-                return;
-
-            _sharedCacheAlloc = new(SharedCacheSize);
+            lock (_lock)
+            {
+                _sharedCache ??= new(new DualMappedJitAllocator(SharedCacheSize), SharedCacheSize);
+            }
         }
 
         public unsafe nint Map(ReadOnlySpan<byte> code, ulong guestAddress, ulong guestSize)
         {
-            if (TryGetCachedFunction(guestAddress, out nint funcPtr))
-            {
-                return funcPtr;
-            }
-
             lock (_lock)
             {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                ArgumentOutOfRangeException.ThrowIfNegativeOrZero(code.Length);
+                nint funcPtr;
                 if (TryGetSharedFunction(guestAddress, out funcPtr))
                 {
                     return funcPtr;
                 }
 
-                int funcOffset = _sharedCache.Allocate(code.Length);
+                int allocatedSize = checked(code.Length + (CodeAlignment - 1)) & ~(CodeAlignment - 1);
+                int funcOffset = _sharedCache.Allocate(allocatedSize);
+                _allocations.Add((funcOffset, allocatedSize));
 
                 funcPtr = _sharedCache.RwPointer + funcOffset;
                 code.CopyTo(new Span<byte>((void*)funcPtr, code.Length));
@@ -138,24 +127,27 @@ namespace Ryujinx.Cpu.LightningJit.Cache
         {
             lock (_lock)
             {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                ArgumentOutOfRangeException.ThrowIfNegativeOrZero(code.Length);
                 int sizeAligned = BitUtils.AlignUp(code.Length, (int)MemoryBlock.GetPageSize());
                 int funcOffset = _sharedCache.AllocateAligned(sizeAligned, (int)MemoryBlock.GetPageSize());
+                _allocations.Add((funcOffset, sizeAligned));
 
                 Debug.Assert((funcOffset & ((int)MemoryBlock.GetPageSize() - 1)) == 0);
-
                 nint funcPtr = _sharedCache.RwPointer + funcOffset;
                 code.CopyTo(new Span<byte>((void*)funcPtr, code.Length));
-                funcPtr = _sharedCache.RxPointer + funcOffset;
-
                 _sharedCache.SysIcacheInvalidate(funcOffset, sizeAligned);
-
-                return funcPtr;
+                return _sharedCache.RxPointer + funcOffset;
             }
         }
 
         internal bool TryGetCachedFunction(ulong guestAddress, out nint funcPtr)
         {
-            return TryGetSharedFunction(guestAddress, out funcPtr);
+            lock (_lock)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                return TryGetSharedFunction(guestAddress, out funcPtr);
+            }
         }
 
         private bool TryGetSharedFunction(ulong guestAddress, out nint funcPtr)
@@ -183,6 +175,17 @@ namespace Ryujinx.Cpu.LightningJit.Cache
 
         protected virtual void Dispose(bool disposing)
         {
+            if (!disposing) return;
+            lock (_lock)
+            {
+                if (_disposed) return;
+                _disposed = true;
+                foreach ((int offset, int size) in _allocations)
+                {
+                    _sharedCache.Free(offset, size);
+                }
+                _allocations.Clear();
+            }
         }
 
         public void Dispose()

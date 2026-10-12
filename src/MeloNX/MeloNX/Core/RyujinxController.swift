@@ -204,6 +204,7 @@ class RyujinxController: ObservableObject {
 
     func stopGame() {
         guard executionLifetime.requestStop() else { return }
+        (Ryujinx.emulationView as? MetalView)?.resetTouchTracking()
         Ryujinx.stopEmulation()
     }
     

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import MeloNXOperationCore
 import UIKit
 import Melo_Controller
 import UniformTypeIdentifiers
@@ -284,10 +285,13 @@ struct PerGameSettingsView: View {
             Section {
                 SliderRow(
                     "Max Anisotropic Filtering",
-                    value: config.maxAnisotropy,
+                    value: Binding(
+                        get: { AnisotropySelection.sliderValue(for: config.maxAnisotropy.wrappedValue) },
+                        set: { config.maxAnisotropy.wrappedValue = AnisotropySelection.nativeValue(for: $0) }
+                    ),
                     range: 0...16.0,
                     step: 0.1,
-                    minLabel: "Off",
+                    minLabel: "Game",
                     maxLabel: "16x",
                     format: "%.1f"
                 )

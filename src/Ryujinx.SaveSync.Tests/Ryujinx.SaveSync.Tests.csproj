@@ -1,5 +1,5 @@
 <Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup><IsPackable>false</IsPackable><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><DefaultItemExcludes>$(DefaultItemExcludes);**/._*</DefaultItemExcludes></PropertyGroup>
+  <PropertyGroup><IsPackable>false</IsPackable><ImplicitUsings>enable</ImplicitUsings><Nullable>enable</Nullable><AllowUnsafeBlocks>true</AllowUnsafeBlocks><DefaultItemExcludes>$(DefaultItemExcludes);**/._*</DefaultItemExcludes></PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
     <PackageReference Include="NUnit" />
@@ -8,6 +8,10 @@
     <ProjectReference Include="../Ryujinx.SaveSync/Ryujinx.SaveSync.csproj" />
     <ProjectReference Include="../Ryujinx.Graphics.GAL/Ryujinx.Graphics.GAL.csproj" />
     <ProjectReference Include="../Ryujinx.Graphics.Gpu/Ryujinx.Graphics.Gpu.csproj" />
+    <ProjectReference Include="../Ryujinx.Input/Ryujinx.Input.csproj" />
+    <Compile Include="../Ryujinx.Input/HLE/TouchFrameBuilder.cs" Link="Production/TouchFrameBuilder.cs" />
+    <Compile Include="../Ryujinx.Library/Native/NativeTouchDriver.cs" Link="Production/NativeTouchDriver.cs" />
+    <Compile Include="../Ryujinx.Library/Native/NativeMouse.cs" Link="Production/NativeMouse.cs" />
     <Compile Include="../Ryujinx.Tests.Memory/MockVirtualMemoryManager.cs" Link="TestUtilities/MockVirtualMemoryManager.cs" />
     <Compile Include="../Ryujinx.Library/Window/EmulationShutdown.cs" Link="Production/EmulationShutdown.cs" />
     <Compile Include="../Ryujinx.Library/SaveSync/LibHacSaveRepository.cs" Link="Production/LibHacSaveRepository.cs" />

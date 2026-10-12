@@ -21,6 +21,10 @@ namespace Ryujinx.Input
         /// </summary>
         Vector2[] GetPositions();
 
+        /// <summary>Snapshot of stable contact IDs and positions. Legacy devices use array indices.</summary>
+        KeyValuePair<int, Vector2>[] GetTouchPoints() => GetPositions()
+            .Select((position, id) => new KeyValuePair<int, Vector2>(id, position)).ToArray();
+
         /// <summary>
         /// Get the client size.
         /// </summary>
