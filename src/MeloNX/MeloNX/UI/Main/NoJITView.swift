@@ -21,6 +21,7 @@ struct NoJITView: View {
     @State private var attemptGeneration = 0
     @State private var setup = false
     @State private var pulseAnimation: Bool = false
+    @Environment(\.scenePhase) private var scenePhase
     
     private var jitStageDescription: String {
         switch jit.phase {
@@ -122,6 +123,11 @@ struct NoJITView: View {
         .padding(24)
         .frame(maxWidth: 400)
         .sheet(isPresented: $setup, onDismiss: { attemptGeneration += 1 }) { NavigationView { BuiltInJITSetupView() }.withAppTheme() }
+        .onChange(of: scenePhase) { phase in
+            if phase == .active, jit.canRetry, !status.isEmpty, !setup {
+                attemptGeneration += 1
+            }
+        }
         .task(id: attemptGeneration) {
             guard let launchID = ryujinxController.pendingLaunchID else { return }
             requestID = launchID

@@ -127,6 +127,14 @@ class RyujinxController: ObservableObject {
     private(set) var pendingLaunchID: UUID?
     private var launchCancelled = false
     private var metadataReloadPending = false
+    private var automaticLaunchTask: Task<Void, Never>?
+    @Published private(set) var waitingForAutomaticJIT = false
+    func cancelAutomaticLaunch() {
+        automaticLaunchTask?.cancel()
+        automaticLaunchTask = nil
+        waitingForAutomaticJIT = false
+        lastGameLaunched = nil
+    }
 
     func pendingGameLease(launchID: UUID? = nil) -> LocalOperationLease? {
         guard !launchCancelled, !emulationThreadActive, let id = pendingLaunchID,
@@ -244,6 +252,19 @@ class RyujinxController: ObservableObject {
             AppAlerts.showSyncAlert(title: "Cannot start game", message: isStopping ? "The previous game is still stopping. Please wait." : "Exit the current game before starting another."); return
         }
         guard !isRunning.hasStarted() else { return }
+        if resumingLaunchID == nil { lastGameLaunched = nil }
+        if resumingLaunchID == nil, BuiltInJITCoordinator.shared.automaticAcquisitionActive {
+            cancelAutomaticLaunch()
+            waitingForAutomaticJIT = true
+            automaticLaunchTask = Task { @MainActor [weak self] in
+                await BuiltInJITCoordinator.shared.waitForAutomaticAcquisition()
+                guard !Task.isCancelled, let self else { return }
+                self.automaticLaunchTask = nil
+                self.waitingForAutomaticJIT = false
+                self.startGame(game)
+            }
+            return
+        }
         if let resumingLaunchID {
             guard pendingLaunchID == resumingLaunchID, !launchCancelled, gameOperation != nil,
                   case .started(let pendingGame, .noJIT) = isRunning, pendingGame.titleId == game.titleId else { return }

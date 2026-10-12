@@ -14,6 +14,10 @@ import MeloNXOperationCore
     private var operation: LocalOperationLease?
     private var borrowedWorker: LocalWorkerLease?
     private var externalActive = false
+    private let automatic = JITAutomaticRequest()
+    private var automaticCancelled = false
+    var automaticAcquisitionActive: Bool { automatic.isRunning }
+    func waitForAutomaticAcquisition() async { _ = await automatic.waitForCurrent() }
     var canRetry: Bool { engine.state.canRetry && !externalActive && !JITDevicePairing.shared.active }
     var unavailableReason: String? {
         if let reason = JITExtensionHost.unavailableReason { return reason }
@@ -74,6 +78,43 @@ import MeloNXOperationCore
         if ready { publishReadiness() }
         return ready
     }
+    func enableAutomatically() async -> Bool {
+        if RyujinxController.shared.isJITEnabled { return true }
+        guard !automaticCancelled else { return false }
+        return await automatic.run { [self] in
+            defer { recordAutomaticReadiness() }
+            guard await SaveRecoveryBootstrap.shared.ensureReady(),
+                  !automaticCancelled,
+                  RyujinxController.shared.pendingLaunchID == nil,
+                  !RyujinxController.shared.isRunning.hasStarted(), canRetry else { return false }
+            let provider = NativeSettingsManager.shared.jitProvider(JITProvider.disabled).value
+            let preference = UserDefaults.standard.object(forKey: "preferBuiltInJIT") as? Bool
+            let builtIn = JITCompatibilityPolicy.useBuiltIn(preference: preference, externalProviderSelected: provider != .disabled)
+            let ready: Bool
+            if builtIn, unavailableReason == nil {
+                guard (try? JITKeychainPairingStore.shared.load()) != nil else {
+                    message = "请先完成内置 JIT 配对并连接 LocalDevVPN。"
+                    return false
+                }
+                ready = await enable()
+            } else {
+                if !checkDebugged() { EnableJIT.enableJIT(provider) }
+                ready = await enableExternal()
+            }
+            print("[JIT] Automatic acquisition ready=\(ready)")
+            return ready
+        }
+    }
+    private func recordAutomaticReadiness() {
+        let evidence: [String: Any] = ["ready": RyujinxController.shared.isJITEnabled,
+            "phase": phase.rawValue, "pid": ProcessInfo.processInfo.processIdentifier,
+            "uptime": ProcessInfo.processInfo.systemUptime]
+        let directory = URL.logsFolderURL
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        if let data = try? JSONSerialization.data(withJSONObject: evidence, options: [.sortedKeys]) {
+            try? data.write(to: directory.appendingPathComponent("jit-auto-status.json"), options: .atomic)
+        }
+    }
     func prepare() async {
         guard canRetry, unavailableReason == nil else { message = unavailableReason ?? "Wait for the previous operation."; return }
         guard beginOperation() else { return }
@@ -108,5 +149,9 @@ import MeloNXOperationCore
         guard engine.state.pendingLaunchID == launchID else { return }
         cancel()
     }
-    func cancel() { engine.cancel(); publish() }
+    func cancel() {
+        automaticCancelled = true
+        RyujinxController.shared.cancelAutomaticLaunch()
+        engine.cancel(); publish()
+    }
 }

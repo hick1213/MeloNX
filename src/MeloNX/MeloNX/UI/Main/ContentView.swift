@@ -58,12 +58,6 @@ struct ContentView: View {
         }
         .task {
             guard await SaveRecoveryBootstrap.shared.ensureReady() else { return }
-            if ryujinxController.lastGameLaunched == nil {
-                EnableJIT.enableJIT(nativeSettingsManager.jitProvider(JITProvider.disabled).value)
-            }
-            
-            _ = await BuiltInJITCoordinator.shared.enableExternal()
-            
             ryujinxController.loadGames()
 #if DEBUG
             await NSZImportDiagnostic.runIfRequested()
@@ -78,6 +72,7 @@ struct ContentView: View {
             AlertHandlers.register()
             
             Air.play(AnyView(Text("Select Game")))
+            Task { _ = await BuiltInJITCoordinator.shared.enableAutomatically() }
             
             try? await Task.sleep(nanoseconds: 500_000_000)
             
@@ -167,6 +162,17 @@ struct ContentView: View {
             NSZImportProgressView()
         }
         .safeAreaInset(edge: .top) { SaveRecoveryStatusView() }
+        .safeAreaInset(edge: .bottom) {
+            if ryujinxController.waitingForAutomaticJIT {
+                HStack {
+                    ProgressView("正在准备 JIT…")
+                    Spacer()
+                    Button("取消启动") { ryujinxController.cancelAutomaticLaunch() }
+                }
+                .padding()
+                .background(.regularMaterial)
+            }
+        }
         .onDisappear { if nszImport.isBusy { nszImport.cancel() } }
         .onChange(of: scenePhase) { newPhase in
             switch newPhase {
@@ -175,8 +181,8 @@ struct ContentView: View {
                     if !ryujinxController.wasManuallyPaused {
                         ryujinxController.isPaused = false
                     }
-                } else {
-                    Task { _ = await BuiltInJITCoordinator.shared.enableExternal() }
+                } else if ryujinxController.pendingLaunchID == nil {
+                    Task { _ = await BuiltInJITCoordinator.shared.enableAutomatically() }
                 }
             case .inactive:
                 if ryujinxController.isRunning.isRunning(), !ryujinxController.wasManuallyPaused {
