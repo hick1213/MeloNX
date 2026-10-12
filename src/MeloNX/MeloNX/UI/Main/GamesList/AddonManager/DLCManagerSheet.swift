@@ -23,14 +23,14 @@ struct DLCManagerSheet: View {
     @State private var importNote: String?
     @State private var needsSaveRetry = false
     
-    class DLCItem: Identifiable, ObservableObject {
+    struct DLCItem: Identifiable {
         let id = UUID()
         let url: URL
         let filename: String
         let relativePath: String
         var ncaList: [DownloadableContentNca]
         
-        @Published var isEnabled: Bool
+        var isEnabled: Bool
         
         init(url: URL, filename: String, relativePath: String, ncaList: [DownloadableContentNca], isEnabled: Bool = false) {
             self.url = url

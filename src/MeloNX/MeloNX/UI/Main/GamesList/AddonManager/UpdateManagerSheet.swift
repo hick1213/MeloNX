@@ -24,13 +24,13 @@ struct UpdateManagerSheet: View {
     @State private var importNote: String?
     @State private var needsSaveRetry = false
     
-    class UpdateItem: Identifiable, ObservableObject {
+    struct UpdateItem: Identifiable {
         let id = UUID()
         let url: URL
         let filename: String
         let relativePath: String
         
-        @Published var isSelected: Bool = false
+        var isSelected: Bool = false
         
         init(url: URL, filename: String, relativePath: String, isSelected: Bool = false) {
             self.url = url
@@ -327,9 +327,13 @@ struct UpdateManagerSheet: View {
     private func toggleSelection(_ update: UpdateItem) {
         guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }, onFailure: { importError = $0 }) else { return }
         defer { try? operation.finish(workerHasEnded: true) }
-        let nowSelected = !update.isSelected
-        updates.forEach { $0.isSelected = $0.relativePath == update.relativePath && nowSelected }
+        guard let index = updates.firstIndex(where: { $0.relativePath == update.relativePath }) else { return }
+        let nowSelected = !updates[index].isSelected
+        for index in updates.indices {
+            updates[index].isSelected = updates[index].relativePath == update.relativePath && nowSelected
+        }
         saveJSON()
+        if !needsSaveRetry { ryujinxController.loadGames() }
     }
     
     private func removeUpdates(at offsets: IndexSet) {
@@ -358,6 +362,7 @@ struct UpdateManagerSheet: View {
         defer { try? operation.finish(workerHasEnded: true) }
         importError = nil
         saveJSON()
+        if !needsSaveRetry { ryujinxController.loadGames() }
     }
 
     private func saveJSON() {
