@@ -379,7 +379,7 @@ namespace Ryujinx.Graphics.Shader.Translation
 
         private ResourceManager CreateResourceManager(bool vertexAsCompute)
         {
-            ResourceManager resourceManager = new(Definitions.Stage, GpuAccessor, GetResourceReservations());
+            ResourceManager resourceManager = new(Definitions.Stage, GpuAccessor, GetResourceReservations(), Address);
 
             if (IsTransformFeedbackEmulated)
             {

@@ -53,13 +53,17 @@ namespace Ryujinx.Graphics.Shader.Translation
         public int LocalGeometryOutputVertexCountMemoryId { get; private set; }
         public int LocalGeometryOutputIndexCountMemoryId { get; private set; }
 
+        public ShaderStage Stage => _stage;
+        public ulong ShaderAddress { get; }
+
         public ShaderProperties Properties { get; }
 
         public ResourceReservations Reservations { get; }
 
-        public ResourceManager(ShaderStage stage, IGpuAccessor gpuAccessor, ResourceReservations reservations = null)
+        public ResourceManager(ShaderStage stage, IGpuAccessor gpuAccessor, ResourceReservations reservations = null, ulong shaderAddress = 0)
         {
             _gpuAccessor = gpuAccessor;
+            ShaderAddress = shaderAddress;
             Properties = new();
             Reservations = reservations;
             _stage = stage;

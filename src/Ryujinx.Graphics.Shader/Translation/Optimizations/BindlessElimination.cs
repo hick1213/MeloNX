@@ -43,6 +43,7 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
                         : texOp.Type.GlslTextureTypeName;
 
                     gpuAccessor.Log($"Failed to find handle source for bindless access of type \"{typeName}\".");
+                    gpuAccessor.Log($"Bindless diagnostic: stage={resourceManager.Stage}, shader=0x{resourceManager.ShaderAddress:x}, instruction={texOp.Inst}, handle={BindlessHandleDiagnostic.Describe(texOp.GetSource(0))}");
 
                     for (int destIndex = 0; destIndex < texOp.DestsCount; destIndex++)
                     {
