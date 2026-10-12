@@ -96,7 +96,8 @@
     with a slightly different name from the one created by dotnet publish, so we copy them over
     to the correctly-named directory -->
     <ItemGroup>
-      <SymbolFiles Include="$(NativeBinary).dsym\**\*.*"/>
+      <SymbolFiles Include="$(NativeBinary).dsym\**\*.*"
+                   Exclude="$(NativeBinary).dsym\**\._*"/>
     </ItemGroup>
     <Copy SourceFiles="@(SymbolFiles)" DestinationFolder="$(PublishDir)$(TargetName).framework.dSYM"/>
   </Target>
