@@ -356,51 +356,88 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
 
         private static bool TryGetOperation(INode asgOp, out Operation outOperation)
         {
-            if (asgOp is PhiNode phi)
+            // Direct operations need no traversal or allocations.
+            if (asgOp is Operation operation)
             {
-                // If we have a phi, let's check if all inputs are effectively the same value.
-                // If so, we can "see through" the phi and pick any of the inputs (since they are all the same).
+                outOperation = operation;
+                return true;
+            }
 
-                Operand firstSrc = phi.GetSource(0);
+            int remaining = 256;
+            return TryResolvePhiOperation(asgOp, new(), new(), 0, ref remaining, out outOperation);
+        }
 
-                for (int index = 1; index < phi.SourcesCount; index++)
-                {
-                    if (!IsSameOperand(firstSrc, phi.GetSource(index)))
-                    {
-                        outOperation = null;
+        private static bool TryResolvePhiOperation(
+            INode asgOp,
+            HashSet<PhiNode> active,
+            Dictionary<PhiNode, Operation> resolved,
+            int depth,
+            ref int remaining,
+            out Operation outOperation)
+        {
+            outOperation = null;
 
-                        return false;
-                    }
-                }
-
-                asgOp = firstSrc.AsgOp;
+            if (depth > 64 || --remaining < 0)
+            {
+                return false;
             }
 
             if (asgOp is Operation operation)
             {
                 outOperation = operation;
-
                 return true;
             }
 
-            outOperation = null;
-
-            return false;
-        }
-
-        private static bool IsSameOperand(Operand x, Operand y)
-        {
-            if (x.Type == y.Type && x.Type == OperandType.LocalVariable)
+            if (asgOp is not PhiNode phi || phi.SourcesCount == 0)
             {
-                return x.AsgOp is Operation xOp &&
-                    y.AsgOp is Operation yOp &&
-                    xOp.Inst == Instruction.BitwiseOr &&
-                    yOp.Inst == Instruction.BitwiseOr &&
-                    AreBothEqualConstantBuffers(xOp.GetSource(0), yOp.GetSource(0)) &&
-                    AreBothEqualConstantBuffers(xOp.GetSource(1), yOp.GetSource(1));
+                return false;
             }
 
-            return false;
+            if (resolved.TryGetValue(phi, out outOperation))
+            {
+                return true;
+            }
+
+            // A shared Phi DAG is valid, but a cycle cannot be proven equivalent here.
+            if (!active.Add(phi))
+            {
+                return false;
+            }
+
+            try
+            {
+                if (!TryResolvePhiOperation(phi.GetSource(0).AsgOp, active, resolved, depth + 1, ref remaining, out Operation first))
+                {
+                    return false;
+                }
+
+                for (int index = 1; index < phi.SourcesCount; index++)
+                {
+                    if (!TryResolvePhiOperation(phi.GetSource(index).AsgOp, active, resolved, depth + 1, ref remaining, out Operation next) ||
+                        !AreSameHandleOperations(first, next))
+                    {
+                        return false;
+                    }
+                }
+
+                // Every incoming path has the same constant-buffer handle expression.
+                resolved.Add(phi, first);
+                outOperation = first;
+                return true;
+            }
+            finally
+            {
+                active.Remove(phi);
+            }
+        }
+
+        private static bool AreSameHandleOperations(Operation x, Operation y)
+        {
+            return x.Inst == Instruction.BitwiseOr &&
+                y.Inst == Instruction.BitwiseOr &&
+                x.SourcesCount == 2 && y.SourcesCount == 2 &&
+                AreBothEqualConstantBuffers(x.GetSource(0), y.GetSource(0)) &&
+                AreBothEqualConstantBuffers(x.GetSource(1), y.GetSource(1));
         }
 
         private static bool AreBothEqualConstantBuffers(Operand x, Operand y)
