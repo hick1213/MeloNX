@@ -308,6 +308,7 @@ class RyujinxController: ObservableObject {
         settings.backendThreading = .on
         
         Ryujinx.beginEmulation()
+        MetalViewRepresentable.createView() // Bind the current/cached layer before the native worker starts.
         executionLifetime.begin()
         isRunning = .started(game: game)
         _isPaused = false

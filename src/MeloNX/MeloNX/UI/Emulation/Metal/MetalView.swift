@@ -7,6 +7,7 @@
 
 import SwiftUI
 import MetalKit
+import MeloNXOperationCore
 
 class MetalView: MTKView {
     @ObservedObject var menuViewShower: InGameConfigView_MenuView = .shared
@@ -172,31 +173,24 @@ struct MetalViewRepresentable: UIViewRepresentable {
     
     @discardableResult
     static func createView() -> UIView {
-        if Ryujinx.emulationView == nil {
+        let view = RenderViewPreparation.prepare(cached: Ryujinx.emulationView, create: {
             let view = MetalView()
-            
             guard let metalLayer = view.layer as? CAMetalLayer else {
                 fatalError("[Swift] Error: MTKView's layer is not a CAMetalLayer")
             }
-            
             UIApplication.shared.isIdleTimerDisabled = true
-            
-            //metalLayer.presentsWithTransaction = false
-            //metalLayer.allowsNextDrawableTimeout = false
-            
             if metalLayer.device == nil {
                 metalLayer.device = MTLCreateSystemDefaultDevice()
             }
-            
-            let layerPtr = Unmanaged.passUnretained(metalLayer).toOpaque()
-            
-            Ryujinx.setNativeWindow(layerPtr)
-            Ryujinx.setUnboundedPresentTargetFps(for: view.window?.screen)
-            
-            Ryujinx.emulationView = view
             return view
-        }
-        
-        return Ryujinx.emulationView!
+        }, publish: { view in
+            guard let metalLayer = view.layer as? CAMetalLayer else {
+                fatalError("[Swift] Error: MTKView's layer is not a CAMetalLayer")
+            }
+            Ryujinx.setNativeWindow(Unmanaged.passUnretained(metalLayer).toOpaque())
+            Ryujinx.setUnboundedPresentTargetFps(for: view.window?.screen)
+        })
+        Ryujinx.emulationView = view
+        return view
     }
 }

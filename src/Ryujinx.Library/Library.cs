@@ -184,7 +184,6 @@ namespace Ryujinx.Library
         [UnmanagedCallersOnly(EntryPoint = "begin_emulation")]
         public static void BeginEmulation()
         {
-            lock (metalLayerLock) nativeMetalLayer = nint.Zero;
             Volatile.Write(ref _runSession, new EmulationRunSession());
             Console.WriteLine("Emulation run armed.");
         }
