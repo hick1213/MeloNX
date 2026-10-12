@@ -7,6 +7,8 @@
     <PackageReference Include="Ryujinx.LibHac" />
     <ProjectReference Include="../Ryujinx.SaveSync/Ryujinx.SaveSync.csproj" />
     <ProjectReference Include="../Ryujinx.Graphics.GAL/Ryujinx.Graphics.GAL.csproj" />
+    <ProjectReference Include="../Ryujinx.Graphics.Gpu/Ryujinx.Graphics.Gpu.csproj" />
+    <Compile Include="../Ryujinx.Tests.Memory/MockVirtualMemoryManager.cs" Link="TestUtilities/MockVirtualMemoryManager.cs" />
     <Compile Include="../Ryujinx.Library/Window/EmulationShutdown.cs" Link="Production/EmulationShutdown.cs" />
     <Compile Include="../Ryujinx.Library/SaveSync/LibHacSaveRepository.cs" Link="Production/LibHacSaveRepository.cs" />
     <Compile Include="../Ryujinx.Library/SaveSync/SaveControlLoader.cs" Link="Production/SaveControlLoader.cs" />

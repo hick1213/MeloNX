@@ -52,6 +52,7 @@ namespace Ryujinx.Graphics.Gpu.Memory
         private ulong _maxCachedBufferBytes = DefaultMaxCachedBufferBytes;
         private ulong _cachedBufferBytes;
         private bool _initialized;
+        private bool _budgetWarningLogged;
 
         private readonly Dictionary<ulong, BufferCacheEntry> _dirtyCache;
         private readonly Dictionary<ulong, BufferCacheEntry> _modifiedCache;
@@ -105,7 +106,7 @@ namespace Ryujinx.Graphics.Gpu.Memory
             _initialized = true;
 
             string memoryKind = isAppleUnifiedMemory ? " (Apple unified memory)" : string.Empty;
-            Logger.Info?.Print(LogClass.Gpu, $"Buffer cache memory limit: {_maxCachedBufferBytes / MiB} MiB{memoryKind}");
+            Logger.Info?.Print(LogClass.Gpu, $"Buffer cache memory target: {_maxCachedBufferBytes / MiB} MiB{memoryKind}");
         }
 
         private void AddBuffer(Buffer buffer)
@@ -114,7 +115,7 @@ namespace Ryujinx.Graphics.Gpu.Memory
             _cachedBufferBytes += buffer.Size;
             buffer.CacheNode = _lruBuffers.AddLast(buffer);
 
-            EnforceCapacity(buffer);
+            CheckCapacity();
         }
 
         private void RemoveBufferTracking(Buffer buffer)
@@ -148,31 +149,15 @@ namespace Ryujinx.Graphics.Gpu.Memory
             }
         }
 
-        private void EnforceCapacity(Buffer protectedBuffer)
+        private void CheckCapacity()
         {
-            LinkedListNode<Buffer> node = _lruBuffers.First;
-            bool buffersEvicted = false;
-
-            while (_cachedBufferBytes > _maxCachedBufferBytes && node != null)
+            // Clean host data may still be referenced by prepared bindings and
+            // cached virtual ranges. Creation cannot safely evict it without
+            // invalidating every reference; retain it until replacement/disposal.
+            if (_cachedBufferBytes > _maxCachedBufferBytes && !_budgetWarningLogged)
             {
-                LinkedListNode<Buffer> next = node.Next;
-                Buffer buffer = node.Value;
-
-                if (buffer != protectedBuffer && buffer.CanEvict())
-                {
-                    _buffers.Remove(buffer);
-                    RemoveBufferTracking(buffer);
-                    buffer.Dispose();
-                    buffersEvicted = true;
-                }
-
-                node = next;
-            }
-
-            if (buffersEvicted)
-            {
-                _pruneCaches = true;
-                NotifyBuffersModified?.Invoke();
+                _budgetWarningLogged = true;
+                Logger.Warning?.Print(LogClass.Gpu, "Buffer cache memory target exceeded; retaining buffers required by existing bindings.");
             }
         }
 
