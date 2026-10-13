@@ -197,6 +197,7 @@ struct Options {
     // Graphics
     var resScale: Float = 1.0
     var maxAnisotropy: Float = -1.0
+    var textureCacheLimitMiB: Int32 = 0
     var aspectRatio: AspectRatio = .fixed16x9
     var backendThreading: BackendThreading = .off
     var enableAsyncShaderCompilation: Bool = false
@@ -384,6 +385,7 @@ struct Options {
         n.pointee.IgnoreMissingServices = ignoreMissingServices
         
         n.pointee.InputPath = utf8(inputPath)
+        n.pointee.TextureCacheLimitMiB = textureCacheLimitMiB
         
         return n
     }

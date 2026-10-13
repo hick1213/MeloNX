@@ -21,6 +21,7 @@ extension Options: Codable {
         case loggingDisableWarning, loggingEnableError, loggingEnableTrace, loggingDisableGuest
         case loggingEnableFsAccessLog, loggingGraphicsDebugLevel
         case resScale, maxAnisotropy, aspectRatio, backendThreading, enableAsyncShaderCompilation, disableMacroHLE
+        case textureCacheLimitMiB
         case graphicsShadersDumpPath, graphicsBackend, preferredGPUVendor
         case antiAliasing, scalingFilter, scalingFilterLevel
         case expandRAM, ignoreMissingServices
@@ -74,6 +75,7 @@ extension Options: Codable {
         try c.encode(loggingGraphicsDebugLevel.rawValue, forKey: .loggingGraphicsDebugLevel)
         try c.encode(resScale,                   forKey: .resScale)
         try c.encode(maxAnisotropy,              forKey: .maxAnisotropy)
+        try c.encode(textureCacheLimitMiB,       forKey: .textureCacheLimitMiB)
         try c.encode(aspectRatio.rawValue,       forKey: .aspectRatio)
         try c.encode(backendThreading.rawValue,  forKey: .backendThreading)
         try c.encode(enableAsyncShaderCompilation, forKey: .enableAsyncShaderCompilation)
@@ -122,6 +124,8 @@ extension Options: Codable {
         loggingEnableFsAccessLog   = try c.decodeIfPresent(Bool.self,   forKey: .loggingEnableFsAccessLog) ?? false
         resScale                   = try c.decodeIfPresent(Float.self,  forKey: .resScale)                 ?? 1.0
         maxAnisotropy              = try c.decodeIfPresent(Float.self,  forKey: .maxAnisotropy)            ?? -1.0
+        let requestedCacheLimit = (try? c.decodeIfPresent(Int32.self, forKey: .textureCacheLimitMiB)) ?? 0
+        textureCacheLimitMiB = (256...2048).contains(requestedCacheLimit) ? requestedCacheLimit : 0
         enableAsyncShaderCompilation = try c.decodeIfPresent(Bool.self, forKey: .enableAsyncShaderCompilation) ?? false
         disableMacroHLE            = try c.decodeIfPresent(Bool.self,   forKey: .disableMacroHLE)          ?? false
         preferredGPUVendor         = try c.decodeIfPresent(String.self, forKey: .preferredGPUVendor)       ?? ""

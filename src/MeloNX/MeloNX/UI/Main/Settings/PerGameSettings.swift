@@ -306,6 +306,21 @@ struct PerGameSettingsView: View {
                 }
             }
             
+            Section {
+                Picker("纹理缓存上限", selection: config.textureCacheLimitMiB) {
+                    Text("自动").tag(Int32(0))
+                    Text("256 MiB").tag(Int32(256))
+                    Text("512 MiB").tag(Int32(512))
+                    Text("768 MiB").tag(Int32(768))
+                    Text("1 GiB").tag(Int32(1024))
+                    Text("1.5 GiB").tag(Int32(1536))
+                    Text("2 GiB").tag(Int32(2048))
+                }
+                .pickerStyle(.menu)
+            } footer: {
+                Text("限制保留的纹理量，按需占用内存。自动按设备选择；手动值也受设备预算限制。更高值会增加内存占用。重新启动游戏后生效；此配置优先于全局设置。")
+            }
+
             Section("Scaling Options") {
                 Picker("Scaling Filter", selection: config.scalingFilter) {
                     ForEach(ScalingFilter.allCases, id: \.self) { filter in

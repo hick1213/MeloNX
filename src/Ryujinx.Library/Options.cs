@@ -273,6 +273,9 @@ namespace Ryujinx.Library
         [Option("max-anisotropy", Required = false, Default = -1, HelpText = "Max Anisotropy. Values range from 0 - 16. Set to -1 to let the game decide.")]
         public float MaxAnisotropy { get; set; }
 
+        [Option("texture-cache-limit-mib", Required = false, Default = 0, HelpText = "Apple texture retention limit in MiB (256-2048). Zero selects automatic; bounded by device memory.")]
+        public int TextureCacheLimitMiB { get; set; }
+
         [Option("aspect-ratio", Required = false, Default = AspectRatio.Fixed16x9, HelpText = "Aspect Ratio applied to the renderer window.")]
         public AspectRatio AspectRatio { get; set; }
 
@@ -459,6 +462,7 @@ namespace Ryujinx.Library
         public bool   IgnoreMissingServices;
 
         public byte*  InputPath;
+        public int    TextureCacheLimitMiB;
     }
 
     public static unsafe class OptionsNativeHelper
@@ -586,6 +590,7 @@ namespace Ryujinx.Library
                 IgnoreMissingServices = n->IgnoreMissingServices,
 
                 InputPath = FromUtf8(n->InputPath),
+                TextureCacheLimitMiB = n->TextureCacheLimitMiB,
             };
         }
 

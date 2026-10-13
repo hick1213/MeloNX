@@ -820,6 +820,7 @@ namespace Ryujinx.Library
             GraphicsConfig.EnableTextureRecompression = option.EnableTextureRecompression;
             GraphicsConfig.ResScale = option.ResScale;
             GraphicsConfig.MaxAnisotropy = option.MaxAnisotropy;
+            GraphicsConfig.TextureCacheLimitMiB = option.TextureCacheLimitMiB;
             GraphicsConfig.ShadersDumpPath = option.GraphicsShadersDumpPath;
             GraphicsConfig.EnableMacroHLE = !option.DisableMacroHLE;
             GraphicsConfig.EnableColorSpacePassthrough = true;

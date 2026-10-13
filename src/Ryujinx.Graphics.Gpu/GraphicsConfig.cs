@@ -18,6 +18,11 @@ namespace Ryujinx.Graphics.Gpu
         public static float MaxAnisotropy { get; set; } = -1;
 
         /// <summary>
+        /// Apple unified-memory texture retention limit in MiB. Zero selects the automatic budget.
+        /// </summary>
+        public static int TextureCacheLimitMiB { get; set; }
+
+        /// <summary>
         /// Base directory used to write shader code dumps.
         /// Set to null to disable code dumping.
         /// </summary>

@@ -227,6 +227,7 @@ typedef struct OptionsNative {
     bool   IgnoreMissingServices;
 
     char*  InputPath;
+    int32_t TextureCacheLimitMiB;
 } OptionsNative;
 
 

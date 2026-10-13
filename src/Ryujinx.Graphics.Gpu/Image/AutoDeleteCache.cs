@@ -86,9 +86,9 @@ namespace Ryujinx.Graphics.Gpu.Image
             if (isAppleUnifiedMemory)
             {
                 _maxCacheMemoryUsage = UnifiedTextureCacheBudget.Calculate(
-                    context.Capabilities.MaximumGpuMemory, cpuMemorySize);
+                    context.Capabilities.MaximumGpuMemory, cpuMemorySize, GraphicsConfig.TextureCacheLimitMiB);
 
-                Logger.Info?.Print(LogClass.Gpu, $"AutoDelete cache memory limit: {_maxCacheMemoryUsage / MiB} MiB (Apple reported unified heap: {context.Capabilities.MaximumGpuMemory / MiB} MiB)");
+                Logger.Info?.Print(LogClass.Gpu, $"AutoDelete cache memory limit: {_maxCacheMemoryUsage / MiB} MiB (Apple reported unified heap: {context.Capabilities.MaximumGpuMemory / MiB} MiB; requested: {GraphicsConfig.TextureCacheLimitMiB} MiB, 0 = automatic)");
                 return;
             }
 
