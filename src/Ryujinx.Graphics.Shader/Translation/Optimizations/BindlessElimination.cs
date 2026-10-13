@@ -32,7 +32,7 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
                     continue;
                 }
 
-                if (!TryConvertBindless(block, resourceManager, gpuAccessor, texOp) &&
+                if (!TryConvertBindless(block, resourceManager, gpuAccessor, texOp, node) &&
                     !GenerateBindlessAccess(block, resourceManager, gpuAccessor, texOp, node))
                 {
                     // If we can't do bindless elimination, remove the texture operation.
@@ -166,7 +166,7 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
             return true;
         }
 
-        private static bool TryConvertBindless(BasicBlock block, ResourceManager resourceManager, IGpuAccessor gpuAccessor, TextureOperation texOp)
+        private static bool TryConvertBindless(BasicBlock block, ResourceManager resourceManager, IGpuAccessor gpuAccessor, TextureOperation texOp, LinkedListNode<INode> node)
         {
             if (texOp.Inst == Instruction.TextureSample || texOp.Inst.IsTextureQuery())
             {
@@ -326,6 +326,11 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
             {
                 Operand src0 = Utils.FindLastOperation(texOp.GetSource(0), block);
 
+                if (texOp.Inst == Instruction.ImageStore && src0.Type != OperandType.ConstantBuffer)
+                {
+                    src0 = ResolveLocalMemoryHandle(node, src0) ?? src0;
+                }
+
                 if (src0.Type == OperandType.ConstantBuffer)
                 {
                     int cbufOffset = src0.GetCbufOffset();
@@ -352,6 +357,77 @@ namespace Ryujinx.Graphics.Shader.Translation.Optimizations
             }
 
             return false;
+        }
+
+        private static Operand ResolveLocalMemoryHandle(LinkedListNode<INode> node, Operand handle)
+        {
+            if (handle.AsgOp is not Operation load || load.Inst != Instruction.Load ||
+                load.StorageKind != StorageKind.LocalMemory || load.SourcesCount != 2 ||
+                load.GetSource(0).Type != OperandType.Constant || load.GetSource(1).Type != OperandType.Constant)
+            {
+                return null;
+            }
+
+            // A compiler spill may hide an otherwise static image handle. Only
+            // forward the nearest proven write in this block, before the Load.
+            // Later private-memory writes cannot change its already-loaded value.
+            int remaining = 512;
+            LinkedListNode<INode> current = node.Previous;
+
+            while (current != null && --remaining >= 0 && current.Value != load)
+            {
+                current = current.Previous;
+            }
+
+            if (current == null || remaining < 0)
+            {
+                return null;
+            }
+
+            int memory = load.GetSource(0).Value;
+            int index = load.GetSource(1).Value;
+
+            for (current = current.Previous; current != null && --remaining >= 0; current = current.Previous)
+            {
+                if (current.Value is not Operation operation)
+                {
+                    continue;
+                }
+
+                // Calls and unresolved stores may alias this private-memory word.
+                if (operation.Inst == Instruction.Call)
+                {
+                    return null;
+                }
+
+                if (operation.Inst != Instruction.Store || operation.StorageKind != StorageKind.LocalMemory)
+                {
+                    continue;
+                }
+
+                if (operation.SourcesCount != 3 || operation.GetSource(0).Type != OperandType.Constant)
+                {
+                    return null;
+                }
+
+                if (operation.GetSource(0).Value != memory)
+                {
+                    continue;
+                }
+
+                if (operation.GetSource(1).Type != OperandType.Constant)
+                {
+                    return null;
+                }
+
+                if (operation.GetSource(1).Value == index)
+                {
+                    Operand value = operation.GetSource(2);
+                    return value.Type == OperandType.ConstantBuffer ? value : null;
+                }
+            }
+
+            return null;
         }
 
         private static bool TryGetOperation(INode asgOp, out Operation outOperation)
