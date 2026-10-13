@@ -8,14 +8,19 @@ namespace Ryujinx.RuntimeSafety.Tests
         private const ulong MiB = 1024 * 1024;
         private const ulong GiB = 1024 * MiB;
 
-        [TestCase(11524 * MiB, 4 * GiB, 11524 * MiB / 16)]
+        [TestCase(11524 * MiB, 4 * GiB, 1024 * MiB)]
         [TestCase(8 * GiB, 4 * GiB, 512 * MiB)]
-        [TestCase(12 * GiB, 4 * GiB, 768 * MiB)]
-        [TestCase(16 * GiB, 4 * GiB, 768 * MiB)]
-        [TestCase(ulong.MaxValue, 4 * GiB, 768 * MiB)]
+        [TestCase(10 * GiB, 4 * GiB, 1024 * MiB)]
+        [TestCase(10 * GiB - 1, 4 * GiB, 640 * MiB - 1)]
+        [TestCase(12 * GiB, 4 * GiB, 1024 * MiB)]
+        [TestCase(16 * GiB, 4 * GiB, 1024 * MiB)]
+        [TestCase(ulong.MaxValue, 4 * GiB, 1024 * MiB)]
         [TestCase(2 * GiB, 4 * GiB, 256 * MiB)]
+        [TestCase(4 * GiB, 4 * GiB, 256 * MiB)]
+        [TestCase(6 * GiB, 4 * GiB, 384 * MiB)]
         [TestCase(0UL, 4 * GiB, 256 * MiB)]
         [TestCase(0UL, 8 * GiB, 512 * MiB)]
+        [TestCase(0UL, 16 * GiB, 768 * MiB)]
         public void ReportedHostHeapDeterminesBoundedCache(ulong heap, ulong fallback, ulong expected)
         {
             Assert.That(UnifiedTextureCacheBudget.Calculate(heap, fallback), Is.EqualTo(expected));
