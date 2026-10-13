@@ -29,7 +29,14 @@ internal static class Pfs0Directory
             if (e.Name >= strings.Length || e.Offset > source.Length - dataStart || e.Size > source.Length - dataStart - e.Offset)
                 throw new InvalidDataException("PFS0 entry exceeds container bounds.");
             int end = Array.IndexOf(strings, (byte)0, (int)e.Name);
-            if (end < 0 || end - e.Name > 255) throw new InvalidDataException("Invalid PFS0 filename.");
+            if (end < 0)
+            {
+                // Some NSZ producers omit the final string-table terminator/padding.
+                // Only accept a name starting at a real string boundary, within this table.
+                if (e.Name != 0 && strings[e.Name - 1] != 0) throw new InvalidDataException("Invalid PFS0 filename.");
+                end = strings.Length;
+            }
+            if (end - e.Name > 255) throw new InvalidDataException("Invalid PFS0 filename.");
             string name = new UTF8Encoding(false, true).GetString(strings, (int)e.Name, end - (int)e.Name);
             ValidateName(name);
             string normalized = name.EndsWith(".ncz", StringComparison.OrdinalIgnoreCase) ? name[..^4] + ".nca" : name;

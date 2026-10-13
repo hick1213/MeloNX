@@ -80,14 +80,7 @@ internal sealed class NszPackageValidator(KeySet ownedKeys) : INszPackageValidat
             }
             NszPackage package = NszContentManifest.SelectPackage(manifests);
             NszContentManifest.ValidateIncludedNcas(manifests[0], metadataIds.Single(), contents.Keys);
-            foreach (var item in manifests[0].Contents)
-            {
-                cancellation.ThrowIfCancellationRequested();
-                if (!contents.TryGetValue(item.ContentId, out var actual) || actual.Size != item.Size || !actual.Hash.AsSpan().SequenceEqual(item.Hash) ||
-                    !NszContentManifest.ContentTypeMatches(item.Type, (byte)actual.Type) ||
-                    !NszContentManifest.TitleMatches(package, item.IdOffset, actual.TitleId))
-                    throw new InvalidDataException("CNMT referenced content is missing or inconsistent.");
-            }
+            ValidateReferencedContents(manifests[0], contents, cancellation);
             byte required = package.Kind == NszPackageKind.AddOnContent ? (byte)2 : (byte)1;
             if (!manifests[0].Contents.Any(e => e.Type == required))
                 throw new NszImportException(NszImportError.UnsupportedPackage, "Package does not contain complete content for its role.");
@@ -95,6 +88,23 @@ internal sealed class NszPackageValidator(KeySet ownedKeys) : INszPackageValidat
         }
         catch (MissingKeyException) { throw new NszImportException(NszImportError.MissingKey, "Required NCA key is unavailable."); }
         catch (EndOfStreamException) { throw new InvalidDataException("Package metadata is truncated."); }
+    }
+    internal static void ValidateReferencedContents(NszContentManifest manifest,
+        IReadOnlyDictionary<string, (long Size, byte[] Hash, NcaContentType Type, ulong TitleId)> contents,
+        CancellationToken cancellation)
+    {
+        foreach (var item in manifest.Contents)
+        {
+            cancellation.ThrowIfCancellationRequested();
+            bool included = contents.TryGetValue(item.ContentId, out var actual);
+            // NSZ may discard optional NDV0 delta fragments from otherwise complete patches.
+            // Any fragment that is present must still pass every integrity check below.
+            if (!included && manifest.Package.Kind == NszPackageKind.Patch && item.Type == 6) continue;
+            if (!included || actual.Size != item.Size || !actual.Hash.AsSpan().SequenceEqual(item.Hash) ||
+                !NszContentManifest.ContentTypeMatches(item.Type, (byte)actual.Type) ||
+                !NszContentManifest.TitleMatches(manifest.Package, item.IdOffset, actual.TitleId))
+                throw new InvalidDataException("CNMT referenced content is missing or inconsistent.");
+        }
     }
     public void Dispose() { ownedKeys.ExternalKeySet.Clear(); ownedKeys.KeyStruct = default; }
 }

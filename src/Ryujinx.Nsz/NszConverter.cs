@@ -9,6 +9,7 @@ public sealed class NszConverter
     private static List<EntryPlan> Plan(Stream input, NszLimits limits, CancellationToken cancellation)
     {
         var plans = new List<EntryPlan>();
+        int totalSections = 0;
         try
         {
             cancellation.ThrowIfCancellationRequested();
@@ -17,8 +18,16 @@ public sealed class NszConverter
                 cancellation.ThrowIfCancellationRequested();
                 if (entry.Name.EndsWith(".ncz", StringComparison.OrdinalIgnoreCase))
                 {
+                    if (totalSections >= limits.MaxTotalSections)
+                        throw new NszImportException(NszImportError.UnsupportedPackage, "NCZ section metadata exceeds the configured resource budget.");
                     var slice = new BoundedReadStream(input, entry.Offset, entry.Size);
                     var layout = NczLayout.Parse(slice, limits, cancellation);
+                    if (layout.Sections.Count > limits.MaxTotalSections - totalSections)
+                    {
+                        layout.Dispose();
+                        throw new NszImportException(NszImportError.UnsupportedPackage, "NCZ section metadata exceeds the configured resource budget.");
+                    }
+                    totalSections += layout.Sections.Count;
                     plans.Add(new EntryPlan(entry, entry.Name[..^4] + ".nca", layout.OutputSize, layout));
                 }
                 else plans.Add(new EntryPlan(entry, entry.Name, entry.Size, null));
