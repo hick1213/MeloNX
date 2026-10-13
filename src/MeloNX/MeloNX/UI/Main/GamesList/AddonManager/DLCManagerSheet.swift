@@ -66,7 +66,9 @@ struct DLCManagerSheet: View {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("Done") { dismiss() }
                 }
-                ToolbarItem(placement: .navigationBarTrailing) {
+                ToolbarItemGroup(placement: .navigationBarTrailing) {
+                    Button("全选", action: selectAllDLCs)
+                        .disabled(dlcs.isEmpty || dlcs.allSatisfy { $0.isEnabled })
                     Button {
                         FileImporterManager.shared.importFiles(
                             types: [.item],
@@ -320,6 +322,15 @@ struct DLCManagerSheet: View {
         }
     }
     
+    private func selectAllDLCs() {
+        guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }, onFailure: { importError = $0 }) else { return }
+        defer { try? operation.finish(workerHasEnded: true) }
+        for index in dlcs.indices {
+            dlcs[index].isEnabled = true
+        }
+        saveJSON()
+    }
+
     private func toggleDLC(_ dlc: DLCItem) {
         guard let operation = LocalOperations.beginImport(gameID: game.flatMap { UInt64($0.titleId, radix: 16) }, onFailure: { importError = $0 }) else { return }
         defer { try? operation.finish(workerHasEnded: true) }
