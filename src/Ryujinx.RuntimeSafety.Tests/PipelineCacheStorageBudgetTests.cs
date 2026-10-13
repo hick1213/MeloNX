@@ -30,8 +30,11 @@ public class PipelineCacheStorageBudgetTests
     public void LargeAppleCacheStillHasFiniteReadAndWriteBound(ulong heap)
     {
         long budget = PipelineCacheStorageBudget.GetMaximumSize(true, heap);
-        Assert.That(PipelineCacheStorageBudget.IsSizeAllowed(512UL * 1024 * 1024, budget), Is.True);
-        Assert.That(PipelineCacheStorageBudget.IsSizeAllowed(512UL * 1024 * 1024 + 1, budget), Is.False);
+        Assert.That(PipelineCacheStorageBudget.IsSizeAllowed(1536UL * 1024 * 1024, budget), Is.True);
+        Assert.That(PipelineCacheStorageBudget.IsSizeAllowed((ulong)Array.MaxLength, budget), Is.True);
+        Assert.That(PipelineCacheStorageBudget.IsSizeAllowed((ulong)Array.MaxLength + 1, budget), Is.False);
+        Assert.That(PipelineCacheStorageBudget.IsSizeAllowed(2UL * 1024 * 1024 * 1024, budget), Is.False,
+            "The nominal 2 GiB cap must also respect the runtime's byte-array length limit.");
         Assert.That(PipelineCacheStorageBudget.IsSizeAllowed(0, budget), Is.False);
         Assert.That(PipelineCacheStorageBudget.IsSizeAllowed(ulong.MaxValue, budget), Is.False);
     }
