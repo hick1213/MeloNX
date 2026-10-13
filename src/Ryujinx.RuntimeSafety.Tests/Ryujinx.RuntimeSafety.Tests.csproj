@@ -9,5 +9,6 @@
     <Compile Include="../Ryujinx.Cpu/LightningJit/TranslatorExecutionLifetime.cs" Link="Production/TranslatorExecutionLifetime.cs" />
     <Compile Include="../Ryujinx.Cpu/LightningJit/TranslatedFunction.cs" Link="Production/TranslatedFunction.cs" />
     <Compile Include="../Ryujinx.Graphics.Gpu/Image/UnifiedTextureCacheBudget.cs" Link="Production/UnifiedTextureCacheBudget.cs" />
+    <Compile Include="../Ryujinx.Graphics.Vulkan/PipelineCacheStorageBudget.cs" Link="Production/PipelineCacheStorageBudget.cs" />
   </ItemGroup>
 </Project>

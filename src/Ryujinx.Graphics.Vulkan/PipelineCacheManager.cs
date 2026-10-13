@@ -10,7 +10,6 @@ namespace Ryujinx.Graphics.Vulkan
     internal sealed class PipelineCacheManager : IDisposable
     {
         private const int WorkerSaveInterval = 64;
-        private const long MaximumCacheSize = 128L * 1024 * 1024;
 
         private readonly Vk _api;
         private readonly Device _device;
@@ -20,6 +19,7 @@ namespace Ryujinx.Graphics.Vulkan
         private readonly string _cacheDirectory;
         private readonly string _mainCachePath;
         private readonly string[] _workerCachePaths;
+        private readonly long _maximumCacheSize;
 
         private bool _disposed;
 
@@ -38,6 +38,20 @@ namespace Ryujinx.Graphics.Vulkan
             _workerCachePaths = new string[workerCount];
 
             PhysicalDeviceProperties properties = physicalDevice.PhysicalDeviceProperties;
+            PhysicalDeviceMemoryProperties memoryProperties = physicalDevice.PhysicalDeviceMemoryProperties;
+            ulong deviceLocalMemory = 0;
+
+            for (int index = 0; index < memoryProperties.MemoryHeapCount; index++)
+            {
+                MemoryHeap heap = memoryProperties.MemoryHeaps[index];
+                if ((heap.Flags & MemoryHeapFlags.DeviceLocalBit) != 0)
+                {
+                    deviceLocalMemory = Math.Max(deviceLocalMemory, heap.Size);
+                }
+            }
+
+            _maximumCacheSize = PipelineCacheStorageBudget.GetMaximumSize(
+                VendorUtils.FromId(properties.VendorID) == Vendor.Apple, deviceLocalMemory);
             string cacheKey = $"{properties.VendorID:X8}-{properties.DeviceID:X8}-{properties.DriverVersion:X8}";
 
             if (!string.IsNullOrEmpty(AppDataManager.BaseDirPath))
@@ -83,7 +97,8 @@ namespace Ryujinx.Graphics.Vulkan
             Logger.Notice.PrintMsg(
                 LogClass.Gpu,
                 $"Vulkan pipeline cache initialized: {FormatSize(loadedSize)} main data, " +
-                $"{loadedWorkerCaches}/{workerCount} worker snapshots recovered.");
+                $"{loadedWorkerCaches}/{workerCount} worker snapshots recovered, " +
+                $"{FormatSize(_maximumCacheSize)} maximum per stored copy.");
         }
 
         public PipelineCache GetWorkerCache(int workerIndex)
@@ -202,7 +217,7 @@ namespace Ryujinx.Graphics.Vulkan
             {
                 FileInfo info = new(path);
 
-                if (info.Length == 0 || info.Length > MaximumCacheSize)
+                if (!PipelineCacheStorageBudget.IsSizeAllowed((ulong)info.Length, _maximumCacheSize))
                 {
                     Logger.Warning?.PrintMsg(
                         LogClass.Gpu,
@@ -234,7 +249,7 @@ namespace Ryujinx.Graphics.Vulkan
             nuint dataSize = 0;
             Result result = _api.GetPipelineCacheData(_device, cache, &dataSize, null);
 
-            if (result.IsError || dataSize == 0 || dataSize > (nuint)MaximumCacheSize || dataSize > int.MaxValue)
+            if (result.IsError || !PipelineCacheStorageBudget.IsSizeAllowed((ulong)dataSize, _maximumCacheSize))
             {
                 Logger.Warning?.PrintMsg(
                     LogClass.Gpu,
