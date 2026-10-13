@@ -44,6 +44,14 @@ namespace Ryujinx.RuntimeSafety.Tests
         [TestCase(0UL, 4 * GiB, 2048, 1024 * MiB)]
         [TestCase(0UL, 0UL, 2048, 256 * MiB)]
         [TestCase(ulong.MaxValue, 4 * GiB, 2048, 2048 * MiB)]
+        [TestCase(11524 * MiB, 4 * GiB, 3072, 3072 * MiB)]
+        [TestCase(11524 * MiB, 4 * GiB, 4096, 4096 * MiB)]
+        [TestCase(10 * GiB, 4 * GiB, 4096, 4096 * MiB)]
+        [TestCase(10 * GiB - 1, 4 * GiB, 4096, 2048 * MiB)]
+        [TestCase(8 * GiB, 4 * GiB, 4096, 2048 * MiB)]
+        [TestCase(4 * GiB, 4 * GiB, 4096, 1024 * MiB)]
+        [TestCase(0UL, 16 * GiB, 4096, 2048 * MiB)]
+        [TestCase(ulong.MaxValue, 4 * GiB, 4096, 4096 * MiB)]
         public void ManualBudgetHonorsChoiceWithinDeviceLimit(ulong heap, ulong fallback, int requestedMiB, ulong expected)
         {
             Assert.That(UnifiedTextureCacheBudget.Calculate(heap, fallback, requestedMiB), Is.EqualTo(expected));
@@ -54,7 +62,7 @@ namespace Ryujinx.RuntimeSafety.Tests
         [TestCase(int.MinValue)]
         [TestCase(1)]
         [TestCase(255)]
-        [TestCase(2049)]
+        [TestCase(4097)]
         [TestCase(int.MaxValue)]
         public void AutomaticAndInvalidChoicesKeepExistingPolicy(int requestedMiB)
         {

@@ -125,7 +125,7 @@ extension Options: Codable {
         resScale                   = try c.decodeIfPresent(Float.self,  forKey: .resScale)                 ?? 1.0
         maxAnisotropy              = try c.decodeIfPresent(Float.self,  forKey: .maxAnisotropy)            ?? -1.0
         let requestedCacheLimit = (try? c.decodeIfPresent(Int32.self, forKey: .textureCacheLimitMiB)) ?? 0
-        textureCacheLimitMiB = (256...2048).contains(requestedCacheLimit) ? requestedCacheLimit : 0
+        textureCacheLimitMiB = (256...4096).contains(requestedCacheLimit) ? requestedCacheLimit : 0
         enableAsyncShaderCompilation = try c.decodeIfPresent(Bool.self, forKey: .enableAsyncShaderCompilation) ?? false
         disableMacroHLE            = try c.decodeIfPresent(Bool.self,   forKey: .disableMacroHLE)          ?? false
         preferredGPUVendor         = try c.decodeIfPresent(String.self, forKey: .preferredGPUVendor)       ?? ""

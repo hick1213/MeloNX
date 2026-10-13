@@ -573,6 +573,8 @@ struct SettingsView: View {
                     Text("1 GiB").tag(Int32(1024))
                     Text("1.5 GiB").tag(Int32(1536))
                     Text("2 GiB").tag(Int32(2048))
+                    Text("3 GiB").tag(Int32(3072))
+                    Text("4 GiB").tag(Int32(4096))
                 }
                 .pickerStyle(.menu)
             } footer: {

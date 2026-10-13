@@ -7,10 +7,14 @@ namespace Ryujinx.Graphics.Gpu.Image
         internal static ulong Calculate(ulong reportedUnifiedHeap, ulong fallbackCpuMemory, int requestedMiB = 0)
         {
             const ulong mib = 1024 * 1024;
-            if (requestedMiB >= 256 && requestedMiB <= 2048)
+            if (requestedMiB >= 256 && requestedMiB <= 4096)
             {
                 ulong hostMemory = reportedUnifiedHeap != 0 ? reportedUnifiedHeap : fallbackCpuMemory;
-                ulong deviceLimit = Math.Clamp(hostMemory / 4, 256 * mib, 2048 * mib);
+                // Larger known Apple heaps permit an explicit 4 GiB retention cap.
+                // Smaller and unknown heaps keep the previous manual device budget.
+                ulong deviceLimit = reportedUnifiedHeap >= 10UL * 1024 * mib
+                    ? Math.Clamp(hostMemory / 2, 256 * mib, 4096 * mib)
+                    : Math.Clamp(hostMemory / 4, 256 * mib, 2048 * mib);
                 return Math.Min((ulong)requestedMiB * mib, deviceLimit);
             }
 
