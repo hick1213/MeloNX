@@ -120,6 +120,12 @@ namespace Ryujinx.Graphics.Vulkan
 
         public BufferView GetBufferView(CommandBufferScoped cbs, bool write)
         {
+            if (write)
+            {
+                // Texel writes also invalidate converted vertex/index data sharing this range.
+                _ = _gd.BufferManager.GetBuffer(cbs.CommandBuffer, _bufferHandle, _offset, _size, true);
+            }
+
             _bufferView ??= _gd.BufferManager.CreateView(_bufferHandle, VkFormat, _offset, _size, ReleaseImpl);
 
             return _bufferView?.Get(cbs, _offset, _size, write).Value ?? default;

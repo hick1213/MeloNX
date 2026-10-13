@@ -8,6 +8,7 @@
     <ProjectReference Include="../Ryujinx.SaveSync/Ryujinx.SaveSync.csproj" />
     <ProjectReference Include="../Ryujinx.Graphics.GAL/Ryujinx.Graphics.GAL.csproj" />
     <ProjectReference Include="../Ryujinx.Graphics.Gpu/Ryujinx.Graphics.Gpu.csproj" />
+    <ProjectReference Include="../Ryujinx.Graphics.Vulkan/Ryujinx.Graphics.Vulkan.csproj" />
     <ProjectReference Include="../Ryujinx.Input/Ryujinx.Input.csproj" />
     <Compile Include="../Ryujinx.Input/HLE/TouchFrameBuilder.cs" Link="Production/TouchFrameBuilder.cs" />
     <Compile Include="../Ryujinx.Library/Native/NativeTouchDriver.cs" Link="Production/NativeTouchDriver.cs" />
