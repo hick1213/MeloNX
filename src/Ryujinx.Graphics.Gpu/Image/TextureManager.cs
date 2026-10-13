@@ -448,17 +448,14 @@ namespace Ryujinx.Graphics.Gpu.Image
                     dsTexture.SignalModifying(true);
                     _rtDsBound = true;
                 }
+
+                scaleMismatch |= dsTexture.ScaleFactor != expectedScale;
             }
 
             if (_rtHostDs != hostDsTexture)
             {
                 _rtHostDs = hostDsTexture;
                 anyChanged = true;
-
-                if (dsTexture != null && dsTexture.ScaleFactor != expectedScale)
-                {
-                    scaleMismatch = true;
-                }
             }
 
             for (int index = 0; index < _rtColors.Length; index++)
@@ -475,17 +472,14 @@ namespace Ryujinx.Graphics.Gpu.Image
                         texture.SignalModifying(true);
                         _rtColorsBound[index] = true;
                     }
+
+                    scaleMismatch |= texture.ScaleFactor != expectedScale;
                 }
 
                 if (_rtHostColors[index] != hostTexture)
                 {
                     _rtHostColors[index] = hostTexture;
                     anyChanged = true;
-
-                    if (texture != null && texture.ScaleFactor != expectedScale)
-                    {
-                        scaleMismatch = true;
-                    }
                 }
             }
 
