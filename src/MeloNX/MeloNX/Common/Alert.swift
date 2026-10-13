@@ -9,14 +9,18 @@ import Foundation
 import UIKit
 import SwiftUI
 
-class AppAlerts {
-    static func topViewController() -> UIViewController? {
-        let rootViewController = UIApplication.shared.connectedScenes
+@MainActor class AppAlerts {
+    private static func rootViewController() -> UIViewController? {
+        UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
+            .filter { $0.activationState == .foregroundActive }
             .flatMap(\.windows)
             .first { $0.isKeyWindow }?
-            .rootViewController ?? UIApplication.shared.windows.first?.rootViewController
-        
+            .rootViewController
+    }
+
+    static func topViewController() -> UIViewController? {
+        let rootViewController = rootViewController()
         guard let rootViewController else {
             return nil
         }
@@ -41,6 +45,58 @@ class AppAlerts {
         
         return viewController
     }
+
+    static func present(_ alert: UIAlertController, from preferred: UIViewController? = nil,
+                        onUnavailable: (() -> Void)? = nil, attempt: Int = 0) {
+        guard attempt < 4, var presenter = preferred ?? rootViewController() else {
+            onUnavailable?()
+            return
+        }
+        while true {
+            if let transition = presenter.transitionCoordinator {
+                var resumed = false
+                let retry = {
+                    guard !resumed else { return }
+                    resumed = true
+                    Task { @MainActor in
+                        // The old sheet/picker may have gone away. Resolve the current host again.
+                        present(alert, onUnavailable: onUnavailable, attempt: attempt + 1)
+                    }
+                }
+                if !transition.animate(alongsideTransition: nil, completion: { _ in retry() }) {
+                    Task { @MainActor in
+                        // A false animation result does not mean dismissal has finished.
+                        for _ in 0..<50 {
+                            guard !resumed else { return }
+                            if presenter.transitionCoordinator == nil && !presenter.isBeingDismissed && !presenter.isBeingPresented {
+                                retry()
+                                return
+                            }
+                            try? await Task.sleep(nanoseconds: 100_000_000)
+                        }
+                        guard !resumed else { return }
+                        resumed = true
+                        onUnavailable?()
+                    }
+                }
+                return
+            }
+            guard !presenter.isBeingDismissed, !presenter.isBeingPresented else {
+                onUnavailable?()
+                return
+            }
+            if let presented = presenter.presentedViewController { presenter = presented }
+            else if let nav = presenter as? UINavigationController, let visible = nav.visibleViewController { presenter = visible }
+            else if let tab = presenter as? UITabBarController, let selected = tab.selectedViewController { presenter = selected }
+            else { break }
+        }
+        guard !(presenter is UIAlertController), !(presenter is UIDocumentPickerViewController),
+              presenter.viewIfLoaded?.window != nil else {
+            onUnavailable?()
+            return
+        }
+        presenter.present(alert, animated: true)
+    }
     
     static func showAlert(_ viewController: UIViewController? = nil,
                           title: String?,
@@ -57,15 +113,7 @@ class AppAlerts {
             alert.addAction(uiAction)
         }
         
-        if Thread.isMainThread {
-            let coolVC = viewController ?? topViewController()
-            coolVC?.present(alert, animated: true, completion: nil)
-        } else {
-            DispatchQueue.main.async {
-                let coolVC = viewController ?? topViewController()
-                coolVC?.present(alert, animated: true, completion: nil)
-            }
-        }
+        present(alert, from: viewController)
     }
     
     @discardableResult
@@ -91,9 +139,7 @@ class AppAlerts {
             })
         }
         
-        Task { @MainActor in
-            topViewController()?.present(alert, animated: true)
-        }
+        present(alert)
         
         return alert
     }
@@ -106,7 +152,7 @@ class AppAlerts {
         action: String = "OK",
     ) async -> String? {
         await withCheckedContinuation { continuation in
-            guard let presenter = topViewController() else {
+            guard topViewController() != nil else {
                 continuation.resume(returning: "NoPresenter")
                 return
             }
@@ -126,7 +172,7 @@ class AppAlerts {
                 continuation.resume(returning: defaultText)
             })
             
-            presenter.present(alert, animated: true)
+            present(alert, onUnavailable: { continuation.resume(returning: "NoPresenter") })
         }
     }
     
@@ -139,7 +185,7 @@ class AppAlerts {
     ) async -> String {
         
         await withCheckedContinuation { continuation in
-            guard let presenter = topViewController() else {
+            guard topViewController() != nil else {
                 continuation.resume(returning: "NoPresenter")
                 return
             }
@@ -158,7 +204,7 @@ class AppAlerts {
                 })
             }
             
-            presenter.present(alert, animated: true)
+            present(alert, onUnavailable: { continuation.resume(returning: "NoPresenter") })
         }
     }
 }

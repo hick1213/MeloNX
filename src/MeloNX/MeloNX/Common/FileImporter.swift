@@ -30,7 +30,7 @@ struct UTTypeWrapper: Codable {
     }
 }
 
-class FileImporterManager: NSObject, ObservableObject, UIDocumentPickerDelegate {
+@MainActor class FileImporterManager: NSObject, ObservableObject, UIDocumentPickerDelegate {
     static let shared = FileImporterManager()
     
     private var currentCompletion: ((Result<[URL], Error>) -> Void)?
@@ -46,13 +46,7 @@ class FileImporterManager: NSObject, ObservableObject, UIDocumentPickerDelegate 
         allowMultiple: Bool = false,
         completion: @escaping (Result<[URL], Error>) -> Void
     ) {
-        self.currentCompletion = { result in
-            Task { @MainActor in
-                // Async importers must acquire their own source lease inside this callback.
-                completion(result)
-                self.stopAccessingSecurityScopedResources()
-            }
-        }
+        self.currentCompletion = completion
         
         var types = types
         let needsAsCopy = AppEnvironment.shared.needsAsCopy
@@ -82,7 +76,9 @@ class FileImporterManager: NSObject, ObservableObject, UIDocumentPickerDelegate 
                 code: 1,
                 userInfo: [NSLocalizedDescriptionKey: "Unable to find presenting view controller."]
             )
-            currentCompletion?(.failure(error))
+            let completion = currentCompletion
+            cleanup()
+            completion?(.failure(error))
             return
         }
         
@@ -116,19 +112,13 @@ class FileImporterManager: NSObject, ObservableObject, UIDocumentPickerDelegate 
         return viewController
     }
     
-    private func stopAccessingSecurityScopedResources() {
-        for url in securityScopedURLs {
-            url.stopAccessingSecurityScopedResource()
-        }
-        securityScopedURLs.removeAll()
-    }
-    
     private func cleanup() {
         currentCompletion = nil
         currentDocumentPicker = nil
     }
     
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+        guard controller === currentDocumentPicker else { return }
         var accessibleURLs: [URL] = []
         
         for url in urls {
@@ -140,18 +130,55 @@ class FileImporterManager: NSObject, ObservableObject, UIDocumentPickerDelegate 
             }
         }
         
-        currentCompletion?(.success(accessibleURLs))
-        cleanup()
+        finish(.success(accessibleURLs), from: controller)
     }
     
     func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+        guard controller === currentDocumentPicker else { return }
         let error = NSError(
             domain: "FileImporterManager",
             code: 2,
             userInfo: [NSLocalizedDescriptionKey: "User cancelled the document picker."]
         )
-        currentCompletion?(.failure(error))
+        finish(.failure(error), from: controller)
+    }
+
+    private func finish(_ result: Result<[URL], Error>, from controller: UIDocumentPickerViewController) {
+        let completion = currentCompletion
+        let scopedURLs = securityScopedURLs
+        securityScopedURLs = []
         cleanup()
+        var delivered = false
+        let deliver: (Result<[URL], Error>) -> Void = { result in
+            guard !delivered else { return }
+            delivered = true
+            Task { @MainActor in
+                // Async importers acquire their own lease before this callback returns.
+                completion?(result)
+                scopedURLs.forEach { $0.stopAccessingSecurityScopedResource() }
+            }
+        }
+        if controller.isBeingDismissed, let transition = controller.transitionCoordinator {
+            if !transition.animate(alongsideTransition: nil, completion: { _ in deliver(result) }) {
+                Task { @MainActor in
+                    for _ in 0..<50 {
+                        guard !delivered else { return }
+                        if controller.presentingViewController == nil ||
+                            (controller.transitionCoordinator == nil && !controller.isBeingDismissed && !controller.isBeingPresented) {
+                            deliver(result)
+                            return
+                        }
+                        try? await Task.sleep(nanoseconds: 100_000_000)
+                    }
+                    deliver(.failure(NSError(domain: "FileImporterManager", code: 4,
+                        userInfo: [NSLocalizedDescriptionKey: "The file picker did not finish closing. Please try again."])))
+                }
+            }
+        } else if controller.presentingViewController != nil {
+            controller.dismiss(animated: true, completion: { deliver(result) })
+        } else {
+            deliver(result)
+        }
     }
 }
 

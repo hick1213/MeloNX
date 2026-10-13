@@ -53,14 +53,11 @@ namespace Ryujinx.Graphics.Gpu.Image
         private ulong MaxTextureSizeCapacity = 4UL * GiB;
         private const ulong MinTextureSizeCapacity = 512 * 1024 * 1024;
         private const ulong DefaultTextureSizeCapacity = 1 * GiB;
-        private const ulong MinUnifiedTextureSizeCapacity = 256 * MiB;
-        private const ulong MaxUnifiedTextureSizeCapacity = 768 * MiB;
         private const ulong TextureSizeCapacity6GiB = 4 * GiB;
         private const ulong TextureSizeCapacity8GiB = 6 * GiB;
         private const ulong TextureSizeCapacity12GiB = 12 * GiB;
 
         private const float MemoryScaleFactor = 0.50f;
-        private const int UnifiedMemoryDivisor = 16;
         private ulong _maxCacheMemoryUsage = DefaultTextureSizeCapacity;
 
         private readonly LinkedList<Texture> _textures;
@@ -88,12 +85,10 @@ namespace Ryujinx.Graphics.Gpu.Image
 
             if (isAppleUnifiedMemory)
             {
-                _maxCacheMemoryUsage = Math.Clamp(
-                    cpuMemorySize / UnifiedMemoryDivisor,
-                    MinUnifiedTextureSizeCapacity,
-                    MaxUnifiedTextureSizeCapacity);
+                _maxCacheMemoryUsage = UnifiedTextureCacheBudget.Calculate(
+                    context.Capabilities.MaximumGpuMemory, cpuMemorySize);
 
-                Logger.Info?.Print(LogClass.Gpu, $"AutoDelete cache memory limit: {_maxCacheMemoryUsage / MiB} MiB (me when apple unified memory)");
+                Logger.Info?.Print(LogClass.Gpu, $"AutoDelete cache memory limit: {_maxCacheMemoryUsage / MiB} MiB (Apple reported unified heap: {context.Capabilities.MaximumGpuMemory / MiB} MiB)");
                 return;
             }
 

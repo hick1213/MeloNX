@@ -8,5 +8,6 @@
     <Compile Include="../Ryujinx.Cpu/LightningJit/Cache/DualMappedNoWxCache.cs" Link="Production/DualMappedNoWxCache.cs" />
     <Compile Include="../Ryujinx.Cpu/LightningJit/TranslatorExecutionLifetime.cs" Link="Production/TranslatorExecutionLifetime.cs" />
     <Compile Include="../Ryujinx.Cpu/LightningJit/TranslatedFunction.cs" Link="Production/TranslatedFunction.cs" />
+    <Compile Include="../Ryujinx.Graphics.Gpu/Image/UnifiedTextureCacheBudget.cs" Link="Production/UnifiedTextureCacheBudget.cs" />
   </ItemGroup>
 </Project>

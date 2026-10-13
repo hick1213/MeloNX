@@ -36,7 +36,7 @@ enum AlertHandlers {
         }
     }
     
-    private static func presentTextInput(_ request: TextInputRequest) {
+    @MainActor private static func presentTextInput(_ request: TextInputRequest) {
         let alert = UIAlertController(
             title: request.title,
             message: request.message,
@@ -61,7 +61,7 @@ enum AlertHandlers {
             invokeEmptyCallback(name: resultName)
         })
         
-        topViewController()?.present(alert, animated: true)
+        AppAlerts.present(alert, onUnavailable: { invokeEmptyCallback(name: resultName) })
     }
     
     private static func registerAlert() {
@@ -79,7 +79,7 @@ enum AlertHandlers {
         }
     }
     
-    private static func presentAlert(_ request: AlertRequest) {
+    @MainActor private static func presentAlert(_ request: AlertRequest) {
         let alert = UIAlertController(
             title:   request.title,
             message: request.message,
@@ -92,7 +92,7 @@ enum AlertHandlers {
             alert.addAction(UIAlertAction(title: "Cancel", style: .cancel))
         }
         
-        topViewController()?.present(alert, animated: true)
+        AppAlerts.present(alert)
     }
     
     private static func invokeStringCallback(name: String, value: String) {
