@@ -286,6 +286,14 @@ struct CartridgeCarouselView: UIViewRepresentable {
         }
     }
 
+    static func dismantleUIView(_ uiView: SCNView, coordinator: Coordinator) {
+        uiView.scene?.rootNode.enumerateHierarchy { node, _ in
+            node.removeAllActions()
+        }
+        NotificationCenter.default.removeObserver(coordinator)
+        coordinator.themeCancellable?.cancel()
+    }
+
     class Coordinator: NSObject, UIContextMenuInteractionDelegate {
         var lastSpinTrigger: Int = 0
         var lastSelectedIndex: Int = 0
@@ -302,6 +310,7 @@ struct CartridgeCarouselView: UIViewRepresentable {
         
         init(_ parent: CartridgeCarouselView) {
             self.parent = parent
+            lastSpinTrigger = parent.spinTrigger
             super.init()
             
             themeCancellable = ThemeManager.shared.$currentTheme

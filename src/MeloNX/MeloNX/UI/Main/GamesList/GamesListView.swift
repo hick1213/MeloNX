@@ -137,20 +137,24 @@ struct GamesListView: View {
                                         toolbarHandler()
                                     }
                                 
-                                let cartridges: [CartridgeData] = ryujinxController.games.compactMap({ CartridgeData(labelImage: $0.icon ?? UIImage(), colors: [UIColor(hex: "171717"), .yellow]) })
+                                let displayedGames = ryujinxController.games
+                                let cartridges: [CartridgeData] = displayedGames.compactMap({ CartridgeData(labelImage: $0.icon ?? UIImage(), colors: [UIColor(hex: "171717"), .yellow]) })
                                 
                                 CartridgeCarouselView(cartridges: cartridges, selectedIndex: $selectedIndex, uiMenu: gameContextUIMenu, spinTrigger: $spinTrigger, reset: $spinReset, spun: { index in
-                                    let game = ryujinxController.games[index]
+                                    guard displayedGames.indices.contains(index) else { return }
+                                    let game = displayedGames[index]
                                     DispatchQueue.main.async {
-                                        ryujinxController.startGame(game)
+                                        guard let currentGame = ryujinxController.games.first(where: { $0.id == game.id }) else { return }
+                                        ryujinxController.startGame(currentGame)
                                     }
                                 })
-                                .onAppear() {
-                                    setupControllerObserversFor3DMode()
-                                }
-                                .onDisappear() {
-                                    resetControllerObservers()
-                                }
+                                .id(displayedGames.map(\.id))
+                            }
+                            .onAppear() {
+                                setupControllerObserversFor3DMode()
+                            }
+                            .onDisappear() {
+                                resetControllerObservers()
                             }
                             .modifier(HiddenScrollBackground())
                             .themedBackground()
@@ -211,6 +215,12 @@ struct GamesListView: View {
             }
         }
         .navigationTitle("Library")
+        .onChange(of: ryujinxController.games.map(\.id)) { _ in
+            selectedIndex = min(selectedIndex, max(0, ryujinxController.games.count - 1))
+            if let selected = scrollTo, !ryujinxController.games.contains(where: { $0.id == selected.id }) {
+                scrollTo = ryujinxController.games.first
+            }
+        }
         .accentColor(theme.accent.primary)
         .fullScreenCover(isPresented: controllerEdit) {
             ControllerView(controller: VirtualControllerManager.shared, isEditing: true, gameId: controllerEditor?.titleId ?? "")
@@ -329,7 +339,7 @@ struct GamesListView: View {
                 }
                 
                 Button(role: .destructive) {
-                    deleteGame(game: game)
+                    ryujinxController.deleteGame(game)
                 } label: {
                     Label("Delete Game", systemImage: "trash")
                 }
@@ -338,6 +348,7 @@ struct GamesListView: View {
     }
     
     private func gameContextUIMenu(for index: Int) -> UIMenu {
+        guard ryujinxController.games.indices.contains(index) else { return UIMenu(children: []) }
         let game = ryujinxController.games[index]
         
         let playAction = UIAction(
@@ -414,7 +425,7 @@ struct GamesListView: View {
             image: UIImage(systemName: "trash"),
             attributes: .destructive
         ) { _ in
-            deleteGame(game: game)
+            ryujinxController.deleteGame(game)
         }
         
         let destructiveSection = UIMenu(
@@ -598,14 +609,6 @@ struct GamesListView: View {
         }
     }
     
-    private func deleteGame(game: GameInfo) {
-        let fileManager = FileManager.default
-        do {
-            try fileManager.removeItem(at: game.fileURL)
-            
-        } catch {
-        }
-    }
 }
 
 struct ClearListBackground: UIViewRepresentable {

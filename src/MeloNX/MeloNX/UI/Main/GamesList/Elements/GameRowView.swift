@@ -85,7 +85,7 @@ struct GameRowView: View {
         .confirmationDialog("Are you sure you want to delete this game?", isPresented: $showGameDeleteConfirmation) {
             Button("Delete", role: .destructive) {
                 if let game = gametoDelete {
-                    deleteGame(game: game)
+                    ryujinxController.deleteGame(game)
                 }
             }
             Button("Cancel", role: .cancel) {}
@@ -100,13 +100,4 @@ struct GameRowView: View {
         
     }
     
-    private func deleteGame(game: GameInfo) {
-        let fileManager = FileManager.default
-        do {
-            try fileManager.removeItem(at: game.fileURL)
-            ryujinxController.games.removeAll { $0.id == game.id }
-        } catch {
-            // print("Error deleting game: \(error)")
-        }
-    }
 }

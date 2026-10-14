@@ -581,6 +581,16 @@ class RyujinxController: ObservableObject {
         sortGames(true)
     }
     
+    @MainActor func deleteGame(_ game: GameInfo) {
+        do {
+            try GameLibraryDeletion.delete(at: game.fileURL, from: &games, fileURL: \.fileURL)
+        } catch {
+            AppAlerts.showAlert(title: "Failed to Delete Game", message: error.localizedDescription, actions: [
+                (title: "OK", style: .default, handler: nil)
+            ])
+        }
+    }
+
     func sortGames(_ isCalled: Bool = false) {
         let nativeSettingsManager: NativeSettingsManager = .shared
         switch nativeSettingsManager.gameSort(GameSort.none).value {
