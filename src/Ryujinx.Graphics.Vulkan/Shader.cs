@@ -19,6 +19,10 @@ namespace Ryujinx.Graphics.Vulkan
 
         private static readonly nint _ptrMainEntryPointName = Marshal.StringToHGlobalAnsi("main");
 
+        private static int _diagnosticNameWarnings;
+
+        private nint _ptrDiagnosticEntryPointName;
+
         private readonly VulkanRenderer _gd;
         private readonly Vk _api;
         private readonly Device _device;
@@ -89,6 +93,8 @@ namespace Ryujinx.Graphics.Vulkan
                     }
                 }
 
+                spirv = PrepareDiagnosticSpirv(spirv, shaderSource.Stage);
+
                 fixed (byte* pCode = spirv)
                 {
                     ShaderModuleCreateInfo shaderModuleCreateInfo = new()
@@ -109,6 +115,28 @@ namespace Ryujinx.Graphics.Vulkan
 
                 CompileStatus = ProgramLinkStatus.Failure;
             }
+        }
+
+        private byte[] PrepareDiagnosticSpirv(byte[] spirv, ShaderStage stage)
+        {
+            if (Environment.GetEnvironmentVariable("MELONX_SHADER_DIAGNOSTIC_NAMES") != "1")
+            {
+                return spirv;
+            }
+
+            if (!SpirvDiagnosticNames.TryRename(spirv, stage, out byte[] renamed, out string name))
+            {
+                if (Interlocked.Increment(ref _diagnosticNameWarnings) <= 8)
+                {
+                    Logger.Warning?.PrintMsg(LogClass.Gpu, $"Shader diagnostic naming skipped for {stage}: ambiguous or malformed SPIR-V entrypoint.");
+                }
+
+                return spirv;
+            }
+
+            _ptrDiagnosticEntryPointName = Marshal.StringToHGlobalAnsi(name);
+            Logger.Info?.PrintMsg(LogClass.Gpu, $"Shader diagnostic identity: stage={stage}, entry={name}, original_sha256={name[4..]}");
+            return renamed;
         }
 
         private unsafe static byte[] GlslToSpirv(string glsl, ShaderStage stage)
@@ -179,7 +207,7 @@ namespace Ryujinx.Graphics.Vulkan
                 SType = StructureType.PipelineShaderStageCreateInfo,
                 Stage = _stage,
                 Module = _module,
-                PName = (byte*)_ptrMainEntryPointName,
+                PName = (byte*)(_ptrDiagnosticEntryPointName != 0 ? _ptrDiagnosticEntryPointName : _ptrMainEntryPointName),
             };
         }
 
@@ -197,6 +225,12 @@ namespace Ryujinx.Graphics.Vulkan
                 if (_module.Handle != 0)
                 {
                     _api.DestroyShaderModule(_device, _module, null);
+                }
+
+                if (_ptrDiagnosticEntryPointName != 0)
+                {
+                    Marshal.FreeHGlobal(_ptrDiagnosticEntryPointName);
+                    _ptrDiagnosticEntryPointName = 0;
                 }
 
                 _disposed = true;
