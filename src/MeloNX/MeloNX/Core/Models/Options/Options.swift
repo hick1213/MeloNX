@@ -168,7 +168,7 @@ struct Options {
     var vSyncMode: VSyncMode = .switchMode
     var customVSyncInterval: Int32 = 120
     var disableShaderCache: Bool = true
-    var enableTextureRecompression: Bool = false
+    var enableTextureRecompression: Bool = true
     var disableDockedMode: Bool = true
     var systemLanguage: SystemLanguage = .americanEnglish
     var systemRegion: NativeRegionCode = .init(swiftRegionCode: Locale.current.regionCode) ?? .USA
@@ -208,7 +208,9 @@ struct Options {
     var antiAliasing: AntiAliasing = .none
     var scalingFilter: ScalingFilter = .bilinear
     var scalingFilterLevel: Int32 = 60
-    
+    var metalFxUpscaleFactor: Float = 2.0
+    var enableHostMemoryBudgetTracking: Bool = true
+
     // Hacks
     var expandRAM: Bool = false
     var ignoreMissingServices: Bool = false
@@ -380,7 +382,9 @@ struct Options {
         n.pointee.AntiAliasing            = antiAliasing
         n.pointee.ScalingFilter           = scalingFilter
         n.pointee.ScalingFilterLevel      = scalingFilterLevel
-        
+        n.pointee.MetalFxUpscaleFactor    = metalFxUpscaleFactor
+        n.pointee.EnableHostMemoryBudgetTracking = enableHostMemoryBudgetTracking
+
         n.pointee.ExpandRAM             = expandRAM
         n.pointee.IgnoreMissingServices = ignoreMissingServices
         

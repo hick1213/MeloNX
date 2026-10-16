@@ -97,7 +97,7 @@ namespace Ryujinx.Memory
                 throw new SystemException(Marshal.GetLastPInvokeErrorMessage());
             }
 
-            if (madvise(address, size, MADV_REMOVE) != 0)
+            if (!DiscardPages(address, size))
             {
                 throw new SystemException(Marshal.GetLastPInvokeErrorMessage());
             }
@@ -106,6 +106,73 @@ namespace Ryujinx.Memory
             {
                 throw new SystemException(Marshal.GetLastPInvokeErrorMessage());
             }
+        }
+
+        /// <summary>
+        /// Same as <see cref="Decommit"/>, but reports failure instead of throwing.
+        /// </summary>
+        public static bool TryDecommit(nint address, ulong size)
+        {
+            if (mprotect(address, size, MmapProts.PROT_READ | MmapProts.PROT_WRITE) != 0)
+            {
+                return false;
+            }
+
+            if (!DiscardPages(address, size))
+            {
+                // Leave the range committed rather than half-decommitted.
+                return false;
+            }
+
+            return mprotect(address, size, MmapProts.PROT_NONE) == 0;
+        }
+
+        /// <summary>
+        /// Releases the physical pages backing a range while leaving the mapping committed and its
+        /// protection untouched, unlike <see cref="Decommit"/>. Use this where the range must stay usable
+        /// </summary>
+        public static bool TryDiscardPages(nint address, ulong size)
+        {
+            return DiscardPages(address, size);
+        }
+
+        /// <summary>
+        /// Counterpart to <see cref="TryDiscardPages"/>, announcing that a previously discarded
+        /// range is about to be used again so the kernel stops counting it as reclaimable.
+        /// </summary>
+        public static bool TryReuseDiscardedPages(nint address, ulong size)
+        {
+            if (OperatingSystem.IsMacOS() || OperatingSystem.IsIOS())
+            {
+                return madvise(address, size, MADV_FREE_REUSE_DARWIN) == 0;
+            }
+
+            // Nothing to undo on Linux: MADV_DONTNEED and MADV_REMOVE take effect immediately.
+            return true;
+        }
+
+        /// <summary>
+        /// Releases the physical pages backing a range, leaving the mapping itself in place.
+        /// Subsequent accesses fault in fresh zero pages.
+        /// </summary>
+        private static bool DiscardPages(nint address, ulong size)
+        {
+            if (OperatingSystem.IsMacOS() || OperatingSystem.IsIOS())
+            {
+                if (madvise(address, size, MADV_FREE_REUSABLE_DARWIN) == 0)
+                {
+                    return true;
+                }
+
+                return madvise(address, size, MADV_DONTNEED) == 0;
+            }
+
+            if (madvise(address, size, MADV_REMOVE) == 0)
+            {
+                return true;
+            }
+
+            return madvise(address, size, MADV_DONTNEED) == 0;
         }
 
         public static bool Reprotect(nint address, ulong size, MemoryPermission permission)

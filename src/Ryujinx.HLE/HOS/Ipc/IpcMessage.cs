@@ -1,29 +1,40 @@
-using Microsoft.IO;
-using Ryujinx.Common;
 using Ryujinx.Common.Memory;
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.IO;
 
 namespace Ryujinx.HLE.HOS.Ipc
 {
-    class IpcMessage
+    class IpcMessage : IDisposable
     {
         public IpcMessageType Type { get; set; }
 
         public IpcHandleDesc HandleDesc { get; set; }
 
-        public List<IpcPtrBuffDesc> PtrBuff { get; private set; }
-        public List<IpcBuffDesc> SendBuff { get; private set; }
-        public List<IpcBuffDesc> ReceiveBuff { get; private set; }
-        public List<IpcBuffDesc> ExchangeBuff { get; private set; }
-        public List<IpcRecvListBuffDesc> RecvListBuff { get; private set; }
+        public List<IpcPtrBuffDesc> PtrBuff { get; }
+        public List<IpcBuffDesc> SendBuff { get; }
+        public List<IpcBuffDesc> ReceiveBuff { get; }
+        public List<IpcBuffDesc> ExchangeBuff { get; }
+        public List<IpcRecvListBuffDesc> RecvListBuff { get; }
 
-        public List<int> ObjectIds { get; private set; }
+        public List<int> ObjectIds { get; }
 
-        public byte[] RawData { get; set; }
+        private byte[] _rawData = [];
+        private int _rawDataLength;
+
+        private byte[] _messageBuffer = [];
+
+        /// <summary>
+        /// Raw data of the message, excluding all headers and descriptors.
+        /// </summary>
+        public ReadOnlySpan<byte> RawData => _rawData.AsSpan(0, _rawDataLength);
+
+        /// <summary>
+        /// Length of <see cref="RawData"/>, in bytes.
+        /// </summary>
+        public int RawDataLength => _rawDataLength;
 
         public IpcMessage()
         {
@@ -36,14 +47,61 @@ namespace Ryujinx.HLE.HOS.Ipc
             ObjectIds = [];
         }
 
-        public IpcMessage(ReadOnlySpan<byte> data, long cmdPtr)
+        /// <summary>
+        /// Clears the message, so that it can be reused for another request or response.
+        /// </summary>
+        public void Reset()
         {
-            RecyclableMemoryStream ms = MemoryStreamManager.Shared.GetStream(data);
+            Type = default;
+            HandleDesc = null;
 
-            BinaryReader reader = new(ms);
+            PtrBuff.Clear();
+            SendBuff.Clear();
+            ReceiveBuff.Clear();
+            ExchangeBuff.Clear();
+            RecvListBuff.Clear();
 
-            int word0 = reader.ReadInt32();
-            int word1 = reader.ReadInt32();
+            ObjectIds.Clear();
+
+            _rawDataLength = 0;
+        }
+
+        /// <summary>
+        /// Reserves <paramref name="length"/> bytes of raw data and returns them for writing.
+        /// The contents are undefined, the caller is expected to overwrite them fully.
+        /// </summary>
+        public Span<byte> AllocRawData(int length)
+        {
+            if (_rawData.Length < length)
+            {
+                ReturnBuffer(ref _rawData);
+
+                _rawData = ArrayPool<byte>.Shared.Rent(length);
+            }
+
+            _rawDataLength = length;
+
+            return _rawData.AsSpan(0, length);
+        }
+
+        public void SetRawData(ReadOnlySpan<byte> data)
+        {
+            data.CopyTo(AllocRawData(data.Length));
+        }
+
+        /// <summary>
+        /// Parses a message from the guest TLS area, replacing any state this instance had.
+        /// </summary>
+        /// <param name="data">Message data, as read from the guest</param>
+        /// <param name="cmdPtr">Guest address <paramref name="data"/> was read from, used for padding calculations</param>
+        public void Parse(ReadOnlySpan<byte> data, long cmdPtr)
+        {
+            Reset();
+
+            int word0 = BinaryPrimitives.ReadInt32LittleEndian(data);
+            int word1 = BinaryPrimitives.ReadInt32LittleEndian(data[sizeof(int)..]);
+
+            int offset = sizeof(int) * 2;
 
             Type = (IpcMessageType)(word0 & 0xffff);
 
@@ -58,47 +116,37 @@ namespace Ryujinx.HLE.HOS.Ipc
 
             if (hndDescEnable)
             {
-                HandleDesc = new IpcHandleDesc(reader);
+                HandleDesc = IpcHandleDesc.Parse(data, ref offset);
             }
 
-            PtrBuff = new List<IpcPtrBuffDesc>(ptrBuffCount);
+            PtrBuff.EnsureCapacity(ptrBuffCount);
 
             for (int index = 0; index < ptrBuffCount; index++)
             {
-                PtrBuff.Add(new IpcPtrBuffDesc(reader));
+                PtrBuff.Add(new IpcPtrBuffDesc(data[offset..]));
+
+                offset += IpcPtrBuffDesc.SizeInBytes;
             }
 
-            static List<IpcBuffDesc> ReadBuff(BinaryReader reader, int count)
-            {
-                List<IpcBuffDesc> buff = new(count);
+            ReadBuff(SendBuff, sendBuffCount, data, ref offset);
+            ReadBuff(ReceiveBuff, recvBuffCount, data, ref offset);
+            ReadBuff(ExchangeBuff, xchgBuffCount, data, ref offset);
 
-                for (int index = 0; index < count; index++)
-                {
-                    buff.Add(new IpcBuffDesc(reader));
-                }
+            rawDataSize *= sizeof(int);
 
-                return buff;
-            }
-
-            SendBuff = ReadBuff(reader, sendBuffCount);
-            ReceiveBuff = ReadBuff(reader, recvBuffCount);
-            ExchangeBuff = ReadBuff(reader, xchgBuffCount);
-
-            rawDataSize *= 4;
-
-            long recvListPos = reader.BaseStream.Position + rawDataSize;
+            int recvListPos = offset + rawDataSize;
 
             // Only CMIF has the padding requirements.
             if (Type < IpcMessageType.TipcCloseSession)
             {
-                long pad0 = GetPadSize16(reader.BaseStream.Position + cmdPtr);
+                int pad0 = (int)GetPadSize16(offset + cmdPtr);
 
                 if (rawDataSize != 0)
                 {
-                    rawDataSize -= (int)pad0;
+                    rawDataSize -= pad0;
                 }
 
-                reader.BaseStream.Seek(pad0, SeekOrigin.Current);
+                offset += pad0;
             }
 
             int recvListCount = recvListFlags - 2;
@@ -112,131 +160,159 @@ namespace Ryujinx.HLE.HOS.Ipc
                 recvListCount = 0;
             }
 
-            RawData = reader.ReadBytes(rawDataSize);
+            // The raw data size is attacker (guest) controlled and can be larger than the message
+            // area that was read, so clamp it rather than faulting on a malformed message.
+            rawDataSize = Math.Clamp(rawDataSize, 0, data.Length - offset);
 
-            reader.BaseStream.Seek(recvListPos, SeekOrigin.Begin);
+            SetRawData(data.Slice(offset, rawDataSize));
 
-            RecvListBuff = new List<IpcRecvListBuffDesc>(recvListCount);
+            offset = recvListPos;
+
+            RecvListBuff.EnsureCapacity(recvListCount);
 
             for (int index = 0; index < recvListCount; index++)
             {
-                RecvListBuff.Add(new IpcRecvListBuffDesc(reader.ReadUInt64()));
-            }
+                RecvListBuff.Add(new IpcRecvListBuffDesc(BinaryPrimitives.ReadUInt64LittleEndian(data[offset..])));
 
-            ObjectIds = [];
-            
-            MemoryStreamManager.Shared.ReleaseStream(ms);
+                offset += sizeof(ulong);
+            }
         }
 
-        public RecyclableMemoryStream GetStream(long cmdPtr, ulong recvListAddr)
+        private static void ReadBuff(List<IpcBuffDesc> buff, int count, ReadOnlySpan<byte> data, ref int offset)
         {
-            RecyclableMemoryStream ms = MemoryStreamManager.Shared.GetStream();
+            buff.EnsureCapacity(count);
 
-            int word0;
-            int word1;
+            for (int index = 0; index < count; index++)
+            {
+                buff.Add(new IpcBuffDesc(data[offset..]));
 
-            word0 = (int)Type;
-            word0 |= (PtrBuff.Count & 0xf) << 16;
-            word0 |= (SendBuff.Count & 0xf) << 20;
-            word0 |= (ReceiveBuff.Count & 0xf) << 24;
-            word0 |= (ExchangeBuff.Count & 0xf) << 28;
+                offset += IpcBuffDesc.SizeInBytes;
+            }
+        }
 
-            using RecyclableMemoryStream handleDataStream = HandleDesc?.GetStream();
+        /// <summary>
+        /// Serializes the message as a CMIF response. The returned span is only valid until the next
+        /// call to <see cref="GetResponse"/> or <see cref="GetResponseTipc"/> on this instance.
+        /// </summary>
+        public ReadOnlySpan<byte> GetResponse(long cmdPtr, ulong recvListAddr)
+        {
+            int handleLength = HandleDesc?.SizeInBytes ?? 0;
+            int ptrBuffLength = PtrBuff.Count * IpcPtrBuffDesc.SizeInBytes;
 
-            int dataLength = RawData?.Length ?? 0;
+            int rawLength = (_rawDataLength + 3) & ~3;
 
-            dataLength = (dataLength + 3) & ~3;
-
-            int rawLength = dataLength;
-
-            int pad0 = (int)GetPadSize16(cmdPtr + 8 + (handleDataStream?.Length ?? 0) + PtrBuff.Count * 8);
+            int pad0 = (int)GetPadSize16(cmdPtr + sizeof(int) * 2 + handleLength + ptrBuffLength);
 
             // Apparently, padding after Raw Data is 16 bytes, however when there is
             // padding before Raw Data too, we need to subtract the size of this padding.
             // This is the weirdest padding I've seen so far...
             int pad1 = 0x10 - pad0;
 
-            dataLength = (dataLength + pad0 + pad1) / 4;
+            int dataLength = (rawLength + pad0 + pad1) / sizeof(int);
 
-            word1 = (dataLength & 0x3ff) | (2 << 10);
-
-            if (HandleDesc != null)
-            {
-                word1 |= 1 << 31;
-            }
-
-            ms.Write(word0);
-            ms.Write(word1);
-
-            if (handleDataStream != null)
-            {
-                ms.Write(handleDataStream);
-            }
-
-            foreach (IpcPtrBuffDesc ptrBuffDesc in PtrBuff)
-            {
-                ms.Write(ptrBuffDesc.GetWord0());
-                ms.Write(ptrBuffDesc.GetWord1());
-            }
-
-            ms.WriteByte(0, pad0);
-
-            if (RawData != null)
-            {
-                ms.Write(RawData);
-                ms.WriteByte(0, rawLength - RawData.Length);
-            }
-
-            ms.WriteByte(0, pad1);
-
-            ms.Write(recvListAddr);
-
-            ms.Position = 0;
-
-            return ms;
-        }
-
-        public RecyclableMemoryStream GetStreamTipc()
-        {
-            Debug.Assert(PtrBuff.Count == 0);
-
-            RecyclableMemoryStream ms = MemoryStreamManager.Shared.GetStream();
-
-            int word0;
-            int word1;
-
-            word0 = (int)Type;
+            int word0 = (int)Type;
+            word0 |= (PtrBuff.Count & 0xf) << 16;
             word0 |= (SendBuff.Count & 0xf) << 20;
             word0 |= (ReceiveBuff.Count & 0xf) << 24;
             word0 |= (ExchangeBuff.Count & 0xf) << 28;
 
-            using RecyclableMemoryStream handleDataStream = HandleDesc?.GetStream();
-
-            int dataLength = RawData?.Length ?? 0;
-
-            dataLength = ((dataLength + 3) & ~3) / 4;
-
-            word1 = (dataLength & 0x3ff);
+            int word1 = (dataLength & 0x3ff) | (2 << 10);
 
             if (HandleDesc != null)
             {
                 word1 |= 1 << 31;
             }
 
-            ms.Write(word0);
-            ms.Write(word1);
+            int size = sizeof(int) * 2 + handleLength + ptrBuffLength + pad0 + rawLength + pad1 + sizeof(ulong);
 
-            if (handleDataStream != null)
+            SpanWriter writer = new(EnsureMessageBuffer(size));
+
+            writer.Write(word0);
+            writer.Write(word1);
+
+            HandleDesc?.Write(ref writer);
+
+            foreach (IpcPtrBuffDesc ptrBuffDesc in PtrBuff)
             {
-                ms.Write(handleDataStream);
+                writer.Write(ptrBuffDesc.GetWord0());
+                writer.Write(ptrBuffDesc.GetWord1());
             }
 
-            if (RawData != null)
+            // The buffer is zeroed by EnsureMessageBuffer, so all padding can just be skipped over.
+            writer.Skip(pad0);
+
+            writer.Write(RawData);
+            writer.Skip(rawLength - _rawDataLength);
+
+            writer.Skip(pad1);
+
+            writer.Write(recvListAddr);
+
+            return _messageBuffer.AsSpan(0, size);
+        }
+
+        /// <summary>
+        /// Serializes the message as a TIPC response. The returned span is only valid until the next
+        /// call to <see cref="GetResponse"/> or <see cref="GetResponseTipc"/> on this instance.
+        /// </summary>
+        public ReadOnlySpan<byte> GetResponseTipc()
+        {
+            Debug.Assert(PtrBuff.Count == 0);
+
+            int handleLength = HandleDesc?.SizeInBytes ?? 0;
+
+            int dataLength = ((_rawDataLength + 3) & ~3) / sizeof(int);
+
+            int word0 = (int)Type;
+            word0 |= (SendBuff.Count & 0xf) << 20;
+            word0 |= (ReceiveBuff.Count & 0xf) << 24;
+            word0 |= (ExchangeBuff.Count & 0xf) << 28;
+
+            int word1 = dataLength & 0x3ff;
+
+            if (HandleDesc != null)
             {
-                ms.Write(RawData);
+                word1 |= 1 << 31;
             }
 
-            return ms;
+            int size = sizeof(int) * 2 + handleLength + _rawDataLength;
+
+            SpanWriter writer = new(EnsureMessageBuffer(size));
+
+            writer.Write(word0);
+            writer.Write(word1);
+
+            HandleDesc?.Write(ref writer);
+
+            writer.Write(RawData);
+
+            return _messageBuffer.AsSpan(0, size);
+        }
+
+        private Span<byte> EnsureMessageBuffer(int size)
+        {
+            if (_messageBuffer.Length < size)
+            {
+                ReturnBuffer(ref _messageBuffer);
+
+                _messageBuffer = ArrayPool<byte>.Shared.Rent(size);
+            }
+
+            Span<byte> buffer = _messageBuffer.AsSpan(0, size);
+
+            buffer.Clear();
+
+            return buffer;
+        }
+
+        private static void ReturnBuffer(ref byte[] buffer)
+        {
+            if (buffer.Length != 0)
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+
+                buffer = [];
+            }
         }
 
         private static long GetPadSize16(long position)
@@ -279,6 +355,14 @@ namespace Ryujinx.HLE.HOS.Ipc
             }
 
             return (0, 0);
+        }
+
+        public void Dispose()
+        {
+            ReturnBuffer(ref _rawData);
+            ReturnBuffer(ref _messageBuffer);
+
+            _rawDataLength = 0;
         }
     }
 }

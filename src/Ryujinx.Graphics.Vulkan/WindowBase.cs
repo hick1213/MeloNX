@@ -15,6 +15,7 @@ namespace Ryujinx.Graphics.Vulkan
         public abstract void SetAntiAliasing(AntiAliasing effect);
         public abstract void SetScalingFilter(ScalingFilter scalerType);
         public abstract void SetScalingFilterLevel(float scale);
+        public abstract void SetMetalFxUpscaleFactor(float factor);
         public abstract void SetColorSpacePassthrough(bool colorSpacePassthroughEnabled);
     }
 }

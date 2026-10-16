@@ -110,6 +110,7 @@ typedef enum __attribute__((enum_extensibility(open))) ScalingFilter {
     ScalingFilter_Nearest  = 1,
     ScalingFilter_Fsr      = 2,
     ScalingFilter_Area     = 3,
+    ScalingFilter_MetalFx  = 4,
 } ScalingFilter;
 
 typedef enum __attribute__((enum_extensibility(open))) GraphicsBackend {
@@ -222,6 +223,8 @@ typedef struct OptionsNative {
     AntiAliasing  AntiAliasing;
     ScalingFilter ScalingFilter;
     int32_t ScalingFilterLevel;
+    float MetalFxUpscaleFactor;
+    bool   EnableHostMemoryBudgetTracking;
 
     bool   ExpandRAM;
     bool   IgnoreMissingServices;

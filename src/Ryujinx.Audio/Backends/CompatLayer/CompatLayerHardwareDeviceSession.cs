@@ -119,6 +119,7 @@ namespace Ryujinx.Audio.Backends.CompatLayer
             AudioBuffer fakeBuffer = new()
             {
                 BufferTag = buffer.BufferTag,
+                HostTag = buffer.HostTag,
                 DataPointer = buffer.DataPointer,
                 DataSize = (ulong)samples.Length,
             };

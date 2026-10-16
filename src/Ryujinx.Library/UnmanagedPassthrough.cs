@@ -65,6 +65,7 @@ using System.Threading.Tasks;
 using Ryujinx.Common.Callbacks;
 using Ryujinx.Input.Native;
 using Ryujinx.Cpu.LightningJit;
+using Ryujinx.Memory;
 
 namespace Ryujinx.Library 
 {
@@ -89,11 +90,66 @@ namespace Ryujinx.Library
             return CallbackRegistry.InvokeCallback(namePtr, dataPtr, dataLen);
         }
 
+        /// <summary>
+        /// Offers a region of donated memory for the emulator to use as guest RAM.
+        /// </summary>
+        /// <param name="baseAddress">Base of the contiguous donated region</param>
+        /// <param name="size">Size of the region in bytes</param>
+        [UnmanagedCallersOnly(EntryPoint = "offer_donated_memory")]
+        public static void OfferDonatedMemory(nint baseAddress, ulong size)
+        {
+            if (!OperatingSystem.IsIOS())
+            {
+                return;
+            }
+
+            if (baseAddress == nint.Zero || size == 0)
+            {
+                DonatedMemory.Withdraw();
+
+                return;
+            }
+
+            DonatedMemory.Offer(baseAddress, size);
+
+            Logger.Info?.Print(LogClass.Application,
+                $"Guest memory donated by another process: {size / (1024 * 1024)} MB at 0x{baseAddress:x16}");
+        }
+        
+        [UnmanagedCallersOnly(EntryPoint = "withdraw_donated_memory")]
+        public static void WithdrawDonatedMemory()
+        {
+            if (OperatingSystem.IsIOS())
+            {
+                DonatedMemory.Withdraw();
+            }
+        }
+
+        [UnmanagedCallersOnly(EntryPoint = "offer_donated_gpu_memory")]
+        public static byte OfferDonatedGpuMemory(nint address, ulong size)
+        {
+            return (byte)(OperatingSystem.IsIOS() && DonatedBufferMemory.Offer(address, size) ? 1 : 0);
+        }
+
+        [UnmanagedCallersOnly(EntryPoint = "withdraw_donated_gpu_memory")]
+        public static byte WithdrawDonatedGpuMemory()
+        {
+            return (byte)(DonatedBufferMemory.Withdraw() ? 1 : 0);
+        }
+
+        [UnmanagedCallersOnly(EntryPoint = "report_memory_pressure")]
+        public static void ReportMemoryPressure(byte critical)
+        {
+            MemoryPressureMonitor.ReportPressure(
+                critical != 0 ? MemoryPressureLevel.Critical : MemoryPressureLevel.Warning);
+        }
+
         [UnmanagedCallersOnly(EntryPoint = "init_dualmapping")]
         public static bool InitializeDualMapping() 
         {
             return DualMappedMemory.InitMemoryCache();
         }
+        
 
         [UnmanagedCallersOnly(EntryPoint = "execute_function_pointer")]
         public static unsafe ulong ExecuteFunctionPointer(nint functionPtr)

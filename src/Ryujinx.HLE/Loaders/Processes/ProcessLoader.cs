@@ -164,7 +164,7 @@ namespace Ryujinx.HLE.Loaders.Processes
         {
             BlitStruct<ApplicationControlProperty> nacpData = new(1);
             IFileSystem dummyExeFs = null;
-            Stream romfsStream = null;
+            IStorage romfsStorage = null;
 
             string programName = string.Empty;
             ulong programId = 0000000000000000;
@@ -180,11 +180,11 @@ namespace Ryujinx.HLE.Loaders.Processes
                 executable = nro;
 
                 // Open RomFS if exists.
-                IStorage romFsStorage = nro.OpenNroAssetSection(LibHac.Tools.Ro.NroAssetType.RomFs, false);
-                romFsStorage.GetSize(out long romFsSize).ThrowIfFailure();
+                IStorage nroRomFs = nro.OpenNroAssetSection(LibHac.Tools.Ro.NroAssetType.RomFs, false);
+                nroRomFs.GetSize(out long romFsSize).ThrowIfFailure();
                 if (romFsSize != 0)
                 {
-                    romfsStream = romFsStorage.AsStream();
+                    romfsStorage = nroRomFs;
                 }
 
                 // Load Nacp if exists.
@@ -258,9 +258,9 @@ namespace Ryujinx.HLE.Loaders.Processes
             if (processResult.ProcessId != 0)
             {
                 // Load RomFS.
-                if (romfsStream != null)
+                if (romfsStorage != null)
                 {
-                    _device.Configuration.VirtualFileSystem.SetRomFs(processResult.ProcessId, romfsStream);
+                    _device.Configuration.VirtualFileSystem.SetRomFs(processResult.ProcessId, romfsStorage);
                 }
 
                 // Start process.

@@ -121,6 +121,10 @@ struct MetalViewRepresentable: UIViewRepresentable {
             if metalLayer.device == nil {
                 metalLayer.device = MTLCreateSystemDefaultDevice()
             }
+            view.framebufferOnly = false
+            if #available(iOS 16.0, *) {
+                MetalFxBridge.registerCallbacks()
+            }
             return view
         }, publish: { view in
             guard let metalLayer = view.layer as? CAMetalLayer else {

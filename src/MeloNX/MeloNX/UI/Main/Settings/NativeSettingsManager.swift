@@ -50,9 +50,6 @@ class NativeSettingsManager: ObservableObject {
             }
             .store(in: &cancellables)
         
-        if let titleId {
-            UserDefaults.standard.set(true, forKey: titleId)
-        }
     }
     
     static func setShared(_ titleId: String? = nil, pullOriginal: Bool = false) {
@@ -60,15 +57,28 @@ class NativeSettingsManager: ObservableObject {
     }
     
     func reset() {
-        settings.compactMap { $0 as? any AnySettingProtocol }
-                 .forEach { UserDefaults.standard.removeObject(forKey: $0.name) }
+        let defaults = UserDefaults.standard
+        var keys = Set(settings.compactMap { ($0 as? any AnySettingProtocol)?.name })
+
+        if pullOriginal, !titleId.isEmpty {
+            defaults.dictionaryRepresentation().keys
+                .filter { $0 != titleId && $0.hasSuffix(titleId) }
+                .forEach { keys.insert($0) }
+        }
+
+        keys.forEach { defaults.removeObject(forKey: $0) }
         settings.removeAll()
         
         if !titleId.isEmpty {
-            UserDefaults.standard.removeObject(forKey: titleId)
+            defaults.removeObject(forKey: titleId)
         }
         
         objectWillChange.send()
+    }
+
+    fileprivate func markOverrideExists() {
+        guard pullOriginal, !titleId.isEmpty else { return }
+        UserDefaults.standard.set(true, forKey: titleId)
     }
     
     subscript<T: Any>(dynamicMember member: String) -> (T) -> Setting<T> {
@@ -102,6 +112,7 @@ class Setting<T: Any>: Hashable, AnySettingProtocol {
     }
     
     var name: String
+    var fallbackName: String?
     var uddefault: Any
     weak var parent: NativeSettingsManager?
     
@@ -117,31 +128,11 @@ class Setting<T: Any>: Hashable, AnySettingProtocol {
         Binding(get: { self.value }, set: { self.value = $0 })
     }
     
-    init(name: String, defaultAny: T?, parent: NativeSettingsManager? = nil) {
+    init(name: String, fallbackName: String? = nil, defaultAny: T?, parent: NativeSettingsManager? = nil) {
         self.name = name
+        self.fallbackName = fallbackName
         self.uddefault = defaultAny ?? UUID()
         self.parent = parent
-        
-        if UserDefaults.standard.object(forKey: name) == nil {
-            self.setInitialValue(defaultAny)
-        }
-    }
-    
-    private func setInitialValue(_ value: T?) {
-        guard let value = value else { return }
-        
-        if let rawRep = value as? any RawRepresentable {
-            if isPropertyListCompatible(rawRep.rawValue) {
-                UserDefaults.standard.set(rawRep.rawValue, forKey: name)
-                return
-            }
-        }
-        
-        if isPropertyListCompatible(value) {
-            UserDefaults.standard.set(value, forKey: name)
-        } else if let encoded = encodeToData(value) {
-            UserDefaults.standard.set(encoded, forKey: name)
-        }
     }
     
     func binding(default defaultValue: T) -> Binding<T> {
@@ -162,11 +153,15 @@ class Setting<T: Any>: Hashable, AnySettingProtocol {
     }
     
     fileprivate func getValue() -> T? {
-        if let directValue = UserDefaults.standard.object(forKey: name) as? T {
+        storedValue(forKey: name) ?? fallbackName.flatMap { storedValue(forKey: $0) }
+    }
+
+    private func storedValue(forKey key: String) -> T? {
+        if let directValue = UserDefaults.standard.object(forKey: key) as? T {
             return directValue
         }
         
-        if let data = UserDefaults.standard.data(forKey: name),
+        if let data = UserDefaults.standard.data(forKey: key),
            let decoded = decodeFromData(data, as: T.self) {
             return decoded
         }
@@ -186,14 +181,17 @@ class Setting<T: Any>: Hashable, AnySettingProtocol {
         if let rawRep = value as? any RawRepresentable {
             if isPropertyListCompatible(rawRep.rawValue) {
                 UserDefaults.standard.set(rawRep.rawValue, forKey: name)
+                parent?.markOverrideExists()
                 return
             }
         }
         
         if isPropertyListCompatible(value) {
             UserDefaults.standard.set(value, forKey: name)
+            parent?.markOverrideExists()
         } else if let encoded = encodeToData(value) {
             UserDefaults.standard.set(encoded, forKey: name)
+            parent?.markOverrideExists()
         } else {
             print("Warning: Unable to store value for key '\(name)' - not PropertyList compatible and encoding failed")
         }
@@ -275,7 +273,9 @@ class Setting<T: Any>: Hashable, AnySettingProtocol {
             return setting
         }
         
-        let setting = Setting<T>(name: name + titleId, defaultAny: defaultValue, parent: self)
+        let fallbackName = titleId.isEmpty ? nil : name
+        let setting = Setting<T>(name: name + titleId, fallbackName: fallbackName, defaultAny: defaultValue, parent: self)
+        
         self?.settings.insert(setting)
         return setting
     }
@@ -284,7 +284,10 @@ class Setting<T: Any>: Hashable, AnySettingProtocol {
 extension Setting where T: RawRepresentable, T.RawValue == String {
     var value: T {
         get {
-            guard let raw = UserDefaults.standard.string(forKey: name),
+            let raw = UserDefaults.standard.string(forKey: name)
+                ?? fallbackName.flatMap { UserDefaults.standard.string(forKey: $0) }
+
+            guard let raw,
                   let val = T(rawValue: raw) else {
                 return uddefault as! T
             }
@@ -293,6 +296,7 @@ extension Setting where T: RawRepresentable, T.RawValue == String {
         set {
             parent?.objectWillChange.send()
             UserDefaults.standard.set(newValue.rawValue, forKey: name)
+            parent?.markOverrideExists()
         }
     }
     
@@ -308,15 +312,24 @@ extension Setting where T: RawRepresentable, T.RawValue == String {
 extension Setting where T: RawRepresentable, T.RawValue == Int {
     var value: T {
         get {
-            guard UserDefaults.standard.object(forKey: name) != nil else {
+            let key: String
+
+            if UserDefaults.standard.object(forKey: name) != nil {
+                key = name
+            } else if let fallbackName,
+                      UserDefaults.standard.object(forKey: fallbackName) != nil {
+                key = fallbackName
+            } else {
                 return uddefault as! T
             }
-            let raw = UserDefaults.standard.integer(forKey: name)
+
+            let raw = UserDefaults.standard.integer(forKey: key)
             return T(rawValue: raw) ?? (uddefault as! T)
         }
         set {
             parent?.objectWillChange.send()
             UserDefaults.standard.set(newValue.rawValue, forKey: name)
+            parent?.markOverrideExists()
         }
     }
     

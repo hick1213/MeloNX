@@ -13,6 +13,8 @@ struct ControllerRow: View {
     @ObservedObject var controllerManager: ControllerManager
     @EnvironmentObject var ryujinxController: RyujinxController
 
+    @State private var showingMapping = false
+
     private var controller: BaseController? {
         controllerManager.controllerAndIndexForString(controllerId)?.0
     }
@@ -36,6 +38,15 @@ struct ControllerRow: View {
                     Spacer()
 
                     Button {
+                        showingMapping = true
+                    } label: {
+                        Image(systemName: "slider.horizontal.3")
+                            .foregroundColor(.accentColor)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Controller Settings")
+
+                    Button {
                         controllerManager.toggleController(controller)
                     } label: {
                         Image(systemName: "xmark.circle.fill")
@@ -46,22 +57,17 @@ struct ControllerRow: View {
                 .padding(.vertical, 8)
 
             }
+            .sheet(isPresented: $showingMapping) {
+                ControllerMappingView(controller: controller, playerIndex: index)
+                    .environmentObject(ryujinxController)
+            }
             .contextMenu {
-                ForEach(ControllerType.allCases) { type in
-                    if controller.controllerType == type {
-                        Button {
-                            controller.controllerType = type
-                        } label: {
-                            Label(type.displayName, systemImage: "checkmark")
-                        }
-                    } else {
-                        Button(type.displayName) {
-                            controller.controllerType = type
-                            Options.updateControllerType(index: index, to: controller.controllerType, options: &ryujinxController.settings)
-                            
-                        }
-                        .tag(type.rawValue)
-                    }
+                // Controller type lives in the settings panel now, alongside the bindings
+                // and the stick previews it affects.
+                Button {
+                    showingMapping = true
+                } label: {
+                    Label("Controller Settings", systemImage: "slider.horizontal.3")
                 }
             }
         )

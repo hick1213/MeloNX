@@ -68,7 +68,7 @@ namespace Ryujinx.Audio.Backends.OpenAL
             {
                 OpenALAudioBuffer driverBuffer = new()
                 {
-                    DriverIdentifier = buffer.DataPointer,
+                    DriverIdentifier = buffer.HostTag,
                     BufferId = AL.GenBuffer(),
                     SampleCount = GetSampleCount(buffer),
                 };
@@ -139,7 +139,7 @@ namespace Ryujinx.Audio.Backends.OpenAL
                     return true;
                 }
 
-                return driverBuffer.DriverIdentifier != buffer.DataPointer;
+                return driverBuffer.DriverIdentifier != buffer.HostTag;
             }
         }
 

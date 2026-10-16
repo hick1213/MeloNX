@@ -21,11 +21,6 @@ extension URL {
     }
     
     static func perGameConfigURL(_ titleId: String) -> URL {
-        let fileManager = FileManager.default
-        if !fileManager.fileExists(atPath: configFolderURL.path) {
-            try? fileManager.createDirectory(at: configFolderURL, withIntermediateDirectories: true)
-        }
-        
         return configFolderURL.appendingPathComponent(titleId + "_config.json")
     }
     
@@ -57,6 +52,10 @@ extension URL {
         documentsDirectory.appendingPathComponent("logs")
     }
     
+    static var controllerMappingsURL: URL {
+        documentsDirectory.appendingPathComponent("controllerMappings.json")
+    }
+    
     static func cacheFolderURL(for game: GameInfo) -> URL {
         let fileManager = FileManager.default
         let gamesFolder = documentsDirectory.appendingPathComponent("games")
@@ -75,7 +74,7 @@ extension UIDevice {
     }
 }
 
-enum StartedState {
+public enum StartedState {
     case none
     case entitlement
     case extendedEntitlement
@@ -83,7 +82,7 @@ enum StartedState {
     case usersList
 }
 
-enum RunningState {
+public enum RunningState {
     case started(game: GameInfo, state: StartedState = .none)
     case stopped
     case crashed(result: String)
@@ -119,8 +118,8 @@ enum RunningState {
 
 
 
-class RyujinxController: ObservableObject {
-    static var shared: RyujinxController = .init()
+public final class RyujinxController: ObservableObject {
+    public static var shared: RyujinxController = .init()
     
     private init() {}
     private var gameOperation: LocalOperationLease?
@@ -159,11 +158,16 @@ class RyujinxController: ObservableObject {
         gameOperation = nil; pendingLaunchID = nil; launchCancelled = false
     }
     
-    @Published var isRunning: RunningState = .stopped
-    @Published var games: [GameInfo] = []
+    @Published public var isRunning: RunningState = .stopped
+    @Published public var games: [GameInfo] = []
     @Published var settings: Options = .init(inputPath: "")
     
     @Published var perSettings: [String: Options] = [:]
+    
+    private var hasLoadedConfig = false
+    private var configSaveWorkItem: DispatchWorkItem?
+    private var perGameSaveWorkItems: [String: DispatchWorkItem] = [:]
+    private let settingsSaveDelay: TimeInterval = 0.35
     
     var currentSettings: Options {
         get {
@@ -215,6 +219,8 @@ class RyujinxController: ObservableObject {
         (Ryujinx.emulationView as? MetalView)?.resetTouchTracking()
         Ryujinx.stopEmulation()
     }
+    
+    @Published var firmwareInstallState: FirmwareInstallState = .idle
     
     var firmwareVersion: String {
         return Ryujinx.installedFirmwareVersion
@@ -319,10 +325,8 @@ class RyujinxController: ObservableObject {
         loadWithoutSave(game.titleId)
         
         var settings = perSettings[game.titleId] ?? settings
-
-        let preferredNetworkInterfaceId = settings.multiplayerLanInterfaceId == "0"
-            ? self.settings.multiplayerLanInterfaceId
-            : settings.multiplayerLanInterfaceId
+        
+        let preferredNetworkInterfaceId = settings.multiplayerLanInterfaceId == "0" ? self.settings.multiplayerLanInterfaceId : settings.multiplayerLanInterfaceId
         
         settings.resolveMultiplayerLanInterface(preferredInterfaceId: preferredNetworkInterfaceId)
         
@@ -343,8 +347,15 @@ class RyujinxController: ObservableObject {
             redirectStdIOToFile()
         }
         
+        let expandedRAM = settings.expandRAM
+        
         Thread.detachNewThread {
+            RamDonor.prepare(bytes: expandedRAM ? 6 * 1024 * 1024 * 1024 : 4 * 1024 * 1024 * 1024)
+            
+            
             let response = Ryujinx.mainRyu(settings)
+            
+            RamDonor.teardown()
             
             DispatchQueue.main.async {
                 self.executionLifetime.workerEnded()
@@ -411,46 +422,165 @@ class RyujinxController: ObservableObject {
     }
     
     func loadConfig() {
-        if var settings = try? Options.loadFromJSON(at: .configURL) {
+        guard !hasLoadedConfig else { return }
+        hasLoadedConfig = true
+        
+        guard FileManager.default.fileExists(atPath: URL.configURL.path) else {
             settings.resolveMultiplayerLanInterface()
-            self.settings = settings
-            try? self.settings.saveAsJSON(to: .configURL)
-        } else {
-            self.settings.resolveMultiplayerLanInterface()
-            try? FileManager.default.removeItem(at: .configURL)
-            try? self.settings.saveAsJSON(to: .configURL)
+            saveConfig()
+            return
+        }
+        
+        do {
+            var loadedSettings = try Options.loadFromJSON(at: .configURL)
+            loadedSettings.resolveMultiplayerLanInterface()
+            settings = loadedSettings
+        } catch {
+            let backupURL = backupInvalidConfig(at: .configURL)
+            settings = .init(inputPath: "")
+            settings.resolveMultiplayerLanInterface()
+            
+            if backupURL != nil {
+                saveConfig()
+            }
+            
+            showSettingsError(title: "Failed to Load Settings", error: error, backupURL: backupURL, backupWasAttempted: true)
         }
     }
     
+    func scheduleConfigSave() {
+        configSaveWorkItem?.cancel()
+        
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.saveConfig()
+        }
+        
+        configSaveWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + settingsSaveDelay, execute: workItem)
+    }
+    
     func saveConfig() {
+        configSaveWorkItem?.cancel()
+        configSaveWorkItem = nil
+        
         do {
             try settings.saveAsJSON(to: .configURL)
         } catch {
-            try? FileManager.default.removeItem(at: .configURL)
-            try? settings.saveAsJSON(to: .configURL)
+            showSettingsError(title: "Failed to Save Settings", error: error)
         }
     }
     
     func loadPerGameConfig(_ titleId: String) {
-        let setting2s = perSettings[titleId] ??  .init(inputPath: "")
-        if let settings = try? Options.loadFromJSON(at: .perGameConfigURL(titleId)) {
-            self.perSettings[titleId] = settings
-        } else {
-            try? FileManager.default.removeItem(at: .perGameConfigURL(titleId))
-            try? setting2s.saveAsJSON(to: .perGameConfigURL(titleId))
-            self.perSettings[titleId] = .init(inputPath: "")
+        let url = URL.perGameConfigURL(titleId)
+        
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            perSettings.removeValue(forKey: titleId)
+            return
+        }
+        
+        do {
+            perSettings[titleId] = try Options.loadFromJSON(at: url)
+        } catch {
+            let backupURL = backupInvalidConfig(at: url)
+            
+            if backupURL != nil {
+                try? FileManager.default.removeItem(at: url)
+            }
+            
+            perSettings.removeValue(forKey: titleId)
+            showSettingsError(title: "Failed to Load Game Settings", error: error, backupURL: backupURL, backupWasAttempted: true)
         }
     }
     
     func loadWithoutSave(_ titleId: String) {
-        if let settings = try? Options.loadFromJSON(at: .perGameConfigURL(titleId)) {
-            self.perSettings[titleId] = settings
+        loadPerGameConfig(titleId)
+    }
+    
+    func schedulePerGameConfigSave(_ titleId: String) {
+        perGameSaveWorkItems[titleId]?.cancel()
+        
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.savePerGameConfig(titleId)
         }
+        
+        perGameSaveWorkItems[titleId] = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + settingsSaveDelay, execute: workItem)
     }
     
     func savePerGameConfig(_ titleId: String) {
-        let setting2s = perSettings[titleId] ??  .init(inputPath: "")
-        try? setting2s.saveAsJSON(to: .perGameConfigURL(titleId))
+        perGameSaveWorkItems[titleId]?.cancel()
+        perGameSaveWorkItems.removeValue(forKey: titleId)
+        
+        guard let gameSettings = perSettings[titleId] else { return }
+        
+        do {
+            try gameSettings.saveAsJSON(to: .perGameConfigURL(titleId))
+        } catch {
+            showSettingsError(title: "Failed to Save Game Settings", error: error)
+        }
+    }
+    
+    @discardableResult
+    func removePerGameConfig(_ titleId: String) -> Bool {
+        perGameSaveWorkItems[titleId]?.cancel()
+        perGameSaveWorkItems.removeValue(forKey: titleId)
+        
+        let url = URL.perGameConfigURL(titleId)
+        
+        do {
+            if FileManager.default.fileExists(atPath: url.path) {
+                try FileManager.default.removeItem(at: url)
+            }
+            
+            perSettings.removeValue(forKey: titleId)
+            
+            return true
+        } catch {
+            showSettingsError(title: "Failed to Remove Game Settings", error: error)
+            
+            return false
+        }
+    }
+    
+    func hasPerGameConfig(_ titleId: String) -> Bool {
+        perSettings[titleId] != nil ||
+        FileManager.default.fileExists(atPath: URL.perGameConfigURL(titleId).path) ||
+        NativeSettingsManager.exists(titleId)
+    }
+    
+    func flushPendingSettingsSaves() {
+        if configSaveWorkItem != nil {
+            saveConfig()
+        }
+        
+        for titleId in Array(perGameSaveWorkItems.keys) {
+            savePerGameConfig(titleId)
+        }
+    }
+    
+    private func backupInvalidConfig(at url: URL) -> URL? {
+        let backupName = "\(url.deletingPathExtension().lastPathComponent).invalid-\(UUID().uuidString).json"
+        let backupURL = url.deletingLastPathComponent().appendingPathComponent(backupName)
+        
+        do {
+            try FileManager.default.copyItem(at: url, to: backupURL)
+            
+            return backupURL
+        } catch {
+            return nil
+        }
+    }
+    
+    private func showSettingsError(title: String, error: Error, backupURL: URL? = nil, backupWasAttempted: Bool = false) {
+        var message = error.localizedDescription
+        
+        if let backupURL {
+            message += "\n\nThe previous file was backed up as \(backupURL.lastPathComponent)."
+        } else if backupWasAttempted {
+            message += "\n\nA backup could not be created, so the previous file was left unchanged."
+        }
+        
+        AppAlerts.showSyncAlert(title: title, message: message, hasCancel: false)
     }
     
     

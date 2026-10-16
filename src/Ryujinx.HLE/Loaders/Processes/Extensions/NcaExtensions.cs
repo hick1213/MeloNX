@@ -86,7 +86,7 @@ namespace Ryujinx.HLE.Loaders.Processes.Extensions
             {
                 romFs = device.Configuration.VirtualFileSystem.ModLoader.ApplyRomFsMods(processResult.ProgramId, romFs);
 
-                device.Configuration.VirtualFileSystem.SetRomFs(processResult.ProcessId, romFs.AsStream(FileAccess.Read));
+                device.Configuration.VirtualFileSystem.SetRomFs(processResult.ProcessId, romFs);
             }
 
             // Don't create save data for system programs.

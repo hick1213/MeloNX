@@ -48,11 +48,10 @@ def owned_helpers(app):
         helpers.append(path)
     return helpers
 
-def inspect(target, expected_bundle, host):
+def inspect(target, expected_bundle, host, prefix):
     info = plistlib.loads((target / 'Info.plist').read_bytes())
     actual, provisioning = entitlements(target), profile(target)
     allowed = provisioning.get('Entitlements', {})
-    prefix = 'host' if host else 'helper'
     checks[prefix + '_bundle_matches'] = info.get('CFBundleIdentifier') == expected_bundle
     checks[prefix + '_team_matches'] = actual.get('com.apple.developer.team-identifier') == team and team in provisioning.get('TeamIdentifier', [])
     application = actual.get('application-identifier', '')
@@ -75,16 +74,19 @@ def inspect(target, expected_bundle, host):
         public = info.get('NSUbiquitousContainers', {}).get(container, {})
         checks['host_document_container_configured'] = public.get('NSUbiquitousContainerName') == 'MeloNX' and public.get('NSUbiquitousContainerSupportedFolderLevels') == 'Any' and public.get('NSUbiquitousContainerIsDocumentScopePublic') is True
     else:
-        checks['helper_has_no_cloud_entitlements'] = not actual.get('com.apple.developer.icloud-services') and all(not actual.get(key) for key in cloud_keys)
+        checks[prefix + '_has_no_cloud_entitlements'] = not actual.get('com.apple.developer.icloud-services') and all(not actual.get(key) for key in cloud_keys)
 
 try:
     invoke(['codesign', '--verify', '--deep', '--strict', str(app)])
     checks['deep_strict_signature'] = True
-    inspect(app, bundle, True)
+    inspect(app, bundle, True, 'host')
     helpers = owned_helpers(app)
-    checks['one_owned_helper'] = len(helpers) == 1
-    if len(helpers) == 1:
-        inspect(helpers[0], bundle + '.JITHelper', False)
+    expected_helpers = {'MeloNXJITHelper.appex': ('JITHelper', 'jit_helper'), 'MeloNXRamDonor.appex': ('RamDonor', 'ram_donor')}
+    checks['expected_owned_helpers'] = {path.name for path in helpers} == set(expected_helpers)
+    for helper in helpers:
+        if helper.name in expected_helpers:
+            suffix, prefix = expected_helpers[helper.name]
+            inspect(helper, bundle + '.' + suffix, False, prefix)
     passed = bool(checks) and all(checks.values())
     print(json.dumps({'passed': passed, 'checks': checks}, sort_keys=True))
     sys.exit(0 if passed else 1)

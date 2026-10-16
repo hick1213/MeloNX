@@ -36,6 +36,7 @@ struct UTTypeWrapper: Codable {
     private var currentCompletion: ((Result<[URL], Error>) -> Void)?
     private var currentDocumentPicker: UIDocumentPickerViewController?
     private var securityScopedURLs: [URL] = []
+    private var managesSecurityScopedResources = true
     
     private override init() {
         super.init()
@@ -44,9 +45,11 @@ struct UTTypeWrapper: Codable {
     func importFiles(
         types: [UTType],
         allowMultiple: Bool = false,
+        securityScoped: Bool = true,
         completion: @escaping (Result<[URL], Error>) -> Void
     ) {
         self.currentCompletion = completion
+        self.managesSecurityScopedResources = securityScoped
         
         var types = types
         let needsAsCopy = AppEnvironment.shared.needsAsCopy
@@ -122,7 +125,7 @@ struct UTTypeWrapper: Codable {
         var accessibleURLs: [URL] = []
         
         for url in urls {
-            if url.startAccessingSecurityScopedResource() {
+            if managesSecurityScopedResources && url.startAccessingSecurityScopedResource() {
                 securityScopedURLs.append(url)
                 accessibleURLs.append(url)
             } else {

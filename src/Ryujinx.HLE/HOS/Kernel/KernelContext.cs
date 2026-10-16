@@ -1,3 +1,4 @@
+using Ryujinx.Common.Logging;
 using Ryujinx.Cpu;
 using Ryujinx.HLE.HOS.Kernel.Common;
 using Ryujinx.HLE.HOS.Kernel.Memory;
@@ -75,7 +76,7 @@ namespace Ryujinx.HLE.HOS.Kernel
 
             KernelInit.InitializeResourceLimit(ResourceLimit, memorySize);
 
-            MemoryManager = new KMemoryManager(memorySize, memoryArrange);
+            MemoryManager = new KMemoryManager(this, memorySize, memoryArrange);
 
             LargeMemoryBlockSlabManager = new KMemoryBlockSlabManager(KernelConstants.MemoryBlockAllocatorSize * 2);
             SmallMemoryBlockSlabManager = new KMemoryBlockSlabManager(KernelConstants.MemoryBlockAllocatorSize);
@@ -129,6 +130,51 @@ namespace Ryujinx.HLE.HOS.Kernel
             endAddress = (endAddress + (alignment - 1)) & ~(alignment - 1);
 
             Memory.Commit(address, endAddress - address);
+        }
+
+        /// <summary>
+        /// Releases the host pages backing a range of guest physical memory that is no longer in use.
+        /// </summary>
+        /// <param name="address">Offset into the backing memory of the range to release</param>
+        /// <param name="size">Size of the range to release</param>
+        /// <returns>Number of bytes actually released</returns>
+        public ulong DecommitMemory(ulong address, ulong size)
+        {
+            if (!MemoryReclaim.GuestPhysicalEnabled)
+            {
+                return 0;
+            }
+
+            ulong alignment = MemoryBlock.GetPageSize();
+            ulong endAddress = address + size;
+
+            address = (address + (alignment - 1)) & ~(alignment - 1);
+            endAddress &= ~(alignment - 1);
+
+            if (endAddress <= address)
+            {
+                return 0;
+            }
+
+            ulong alignedSize = endAddress - address;
+
+            if (alignedSize < MemoryReclaim.GuestPhysicalMinimumSize)
+            {
+                return 0;
+            }
+
+            if (!Memory.TryDecommit(address, alignedSize))
+            {
+                return 0;
+            }
+
+            MemoryReclaim.AddGuestPhysicalBytes(alignedSize);
+
+            Logger.Debug?.Print(LogClass.Kernel,
+                $"Released 0x{alignedSize:X} bytes of guest physical memory at 0x{address:X} " +
+                $"(0x{MemoryReclaim.GuestPhysicalBytes:X} total)");
+
+            return alignedSize;
         }
 
         public ulong NewThreadUid()

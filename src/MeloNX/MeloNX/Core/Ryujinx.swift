@@ -11,6 +11,34 @@ enum FirmwareInstallationError: Error {
     case failedInstall(String)
 }
 
+enum SaveDataError: Error {
+    case failedToResolve(String)
+}
+
+enum SaveDataType: Int32, CaseIterable, Identifiable {
+    case user = 0
+    case device = 1
+    case bcat = 2
+    
+    var id: Int32 { rawValue }
+    
+    var name: String {
+        switch self {
+        case .user: return "User Save Directory"
+        case .device: return "Device Save Directory"
+        case .bcat: return "BCAT Save Directory"
+        }
+    }
+    
+    var symbol: String {
+        switch self {
+        case .user: return "person.crop.circle"
+        case .device: return "internaldrive"
+        case .bcat: return "antenna.radiowaves.left.and.right"
+        }
+    }
+}
+
 final class Ryujinx {
     static func beginEmulation() { begin_emulation() }
     static var emulationView: MTKView?
@@ -81,6 +109,22 @@ final class Ryujinx {
         defer { MeloNX.free_firmware_version(error) }
 
         throw FirmwareInstallationError.failedInstall(string)
+    }
+    
+    static func saveDataPath(titleId: String, type: SaveDataType) throws -> String {
+        let result = titleId.withCString {
+            MeloNX.get_save_data_path($0, type.rawValue)
+        }
+        
+        defer { MeloNX.free_save_data_path(result) }
+        
+        let value = result.value.map { String(cString: $0) }
+        
+        guard result.success, let value else {
+            throw SaveDataError.failedToResolve(value ?? "Unknown error.")
+        }
+        
+        return value
     }
     
     static func touchBegan(_ point: CGPoint, index: Int) {
@@ -457,6 +501,12 @@ fileprivate func set_view_size(_ width: Int32, _ height: Int32)
 
 @_silgen_name("set_unbounded_present_target_fps")
 fileprivate func set_unbounded_present_target_fps(_ targetFps: Int32)
+
+@_silgen_name("get_save_data_path")
+fileprivate func get_save_data_path(_ titleIdPtr: UnsafePointer<CChar>!, _ saveDataType: Int32) -> SaveDataPathC
+
+@_silgen_name("free_save_data_path")
+fileprivate func free_save_data_path(_ saveDataPath: SaveDataPathC)
 
 @_silgen_name("get_dlc_nca_list")
 func get_dlc_nca_list(_ titleIdPtr: UnsafePointer<CChar>!, _ pathPtr: UnsafePointer<CChar>!) -> DlcNcaListC

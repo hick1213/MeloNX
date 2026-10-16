@@ -39,7 +39,7 @@
       ignoresPersistentStateOnLaunch = "NO"
       debugDocumentVersioning = "YES"
       debugServiceExtension = "internal"
-      enableGPUValidationMode = "1"
+      showGraphicsOverview = "Yes"
       allowLocationSimulation = "YES"
       consoleMode = "0"
       structuredConsoleMode = "1">
@@ -53,6 +53,9 @@
             ReferencedContainer = "container:MeloNX.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <EnvironmentVariables>
+         <EnvironmentVariable key = "MTL_SHADER_VALIDATION" value = "0" isEnabled = "YES"/>
+      </EnvironmentVariables>
       <AdditionalOptions>
          <AdditionalOption
             key = "APP_DISTRIBUTOR_ID_OVERRIDE"
@@ -60,9 +63,9 @@
             isEnabled = "YES">
          </AdditionalOption>
       </AdditionalOptions>
-      <MetalAPIValidationSettings
+      <MetalShaderValidationSettings
          isEnabled = "No">
-      </MetalAPIValidationSettings>
+      </MetalShaderValidationSettings>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"

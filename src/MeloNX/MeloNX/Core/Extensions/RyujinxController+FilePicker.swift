@@ -109,30 +109,5 @@ extension RyujinxController {
             AppAlerts.showSyncAlert(title: "Failed to import", message: err.localizedDescription)
         }
     }
-    
-    public func handleFirmwareImport(result: Result<[URL], Error>) {
-        switch result {
-        case .success(let url):
-            guard let url = url.first else {
-                return
-            }
-            
-            guard let operation = LocalOperations.beginImport() else { return }
-            defer { try? operation.finish(workerHasEnded: true) }
-            do {
-                let path = url.path
-                
-                try Ryujinx.installFirmware(at: path)
-                objectWillChange.send()
-                _ = firmwareVersion
-            } catch FirmwareInstallationError.failedInstall(let string) {
-                AppAlerts.showSyncAlert(title: "Installing Firmware Failed", message: string, hasCancel: false)
-            } catch {
-                AppAlerts.showSyncAlert(title: "Installing Firmware Failed", message: error.localizedDescription, hasCancel: false)
-            }
-        case .failure(let error):
-            AppAlerts.showSyncAlert(title: "Installing Firmware Failed", message: error.localizedDescription, hasCancel: false)
-        }
-    }
-    
+
 }

@@ -56,6 +56,8 @@ namespace Ryujinx.Memory
 
         public const int MADV_DONTNEED = 4;
         public const int MADV_REMOVE = 9;
+        public const int MADV_FREE_REUSABLE_DARWIN = 7;
+        public const int MADV_FREE_REUSE_DARWIN = 8;
 
         [LibraryImport("libc", EntryPoint = "mmap", SetLastError = true)]
         private static partial nint Internal_mmap(nint address, ulong length, MmapProts prot, int flags, int fd, long offset);

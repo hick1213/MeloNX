@@ -207,7 +207,7 @@ namespace Ryujinx.Audio.Backends.Apple
 
             ulong sampleCount = (ulong)GetSampleCount(buffer.Data.Length);
             nint pcmBuffer = CreatePcmBuffer(buffer, sampleCount);
-            AppleAudioBuffer driverBuffer = new(buffer.DataPointer, sampleCount, pcmBuffer);
+            AppleAudioBuffer driverBuffer = new(buffer.HostTag, sampleCount, pcmBuffer);
 
             _queuedBuffers.Enqueue(driverBuffer);
             AVFoundation.ScheduleBuffer(_playerNode, pcmBuffer, _completionBlock);
@@ -259,7 +259,7 @@ namespace Ryujinx.Audio.Backends.Apple
                 return true;
             }
 
-            return driverBuffer.DriverIdentifier != buffer.DataPointer;
+            return driverBuffer.DriverIdentifier != buffer.HostTag;
         }
 
         public override void PrepareToClose() { }

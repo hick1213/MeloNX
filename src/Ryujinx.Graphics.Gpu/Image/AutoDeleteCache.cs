@@ -1,5 +1,6 @@
 using Ryujinx.Common.Logging;
 using Ryujinx.Graphics.GAL;
+using Ryujinx.Memory;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -53,11 +54,14 @@ namespace Ryujinx.Graphics.Gpu.Image
         private ulong MaxTextureSizeCapacity = 4UL * GiB;
         private const ulong MinTextureSizeCapacity = 512 * 1024 * 1024;
         private const ulong DefaultTextureSizeCapacity = 1 * GiB;
+        private const ulong MinUnifiedTextureSizeCapacity = 256 * MiB;
+        private const ulong MaxUnifiedTextureSizeCapacity = 768 * MiB;
         private const ulong TextureSizeCapacity6GiB = 4 * GiB;
         private const ulong TextureSizeCapacity8GiB = 6 * GiB;
         private const ulong TextureSizeCapacity12GiB = 12 * GiB;
 
         private const float MemoryScaleFactor = 0.50f;
+        private const int ConstrainedMemoryDivisor = 8;
         private ulong _maxCacheMemoryUsage = DefaultTextureSizeCapacity;
 
         private readonly LinkedList<Texture> _textures;
@@ -73,7 +77,7 @@ namespace Ryujinx.Graphics.Gpu.Image
         /// </summary>
         /// <remarks>
         /// If the backend GPU has 0 memory capacity, the cache size defaults to `DefaultTextureSizeCapacity`.
-        /// 
+        ///
         /// Reads the current Device total CPU Memory, to determine the maximum amount of Vram available. Capped to 50% of Current GPU Memory.
         /// </remarks>
         /// <param name="context">The GPU context that the cache belongs to</param>
@@ -88,7 +92,26 @@ namespace Ryujinx.Graphics.Gpu.Image
                 _maxCacheMemoryUsage = UnifiedTextureCacheBudget.Calculate(
                     context.Capabilities.MaximumGpuMemory, cpuMemorySize, GraphicsConfig.TextureCacheLimitMiB);
 
-                Logger.Info?.Print(LogClass.Gpu, $"AutoDelete cache memory limit: {_maxCacheMemoryUsage / MiB} MiB (Apple reported unified heap: {context.Capabilities.MaximumGpuMemory / MiB} MiB; requested: {GraphicsConfig.TextureCacheLimitMiB} MiB, 0 = automatic)");
+                // Explicit retention limits keep the user's selected policy. Automatic mode may
+                // additionally account for the process budget supplied by the host.
+                bool hasManualLimit = GraphicsConfig.TextureCacheLimitMiB is >= 256 and <= 4096;
+                ulong? hostShare = !hasManualLimit && GraphicsConfig.EnableHostMemoryBudgetTracking
+                    ? HostMemoryBudget.GetShare(
+                        ConstrainedMemoryDivisor,
+                        MinUnifiedTextureSizeCapacity,
+                        MaxUnifiedTextureSizeCapacity)
+                    : null;
+
+                if (hostShare.HasValue)
+                {
+                    _maxCacheMemoryUsage = Math.Min(_maxCacheMemoryUsage, hostShare.Value);
+                }
+
+                string basis = hostShare.HasValue
+                    ? $"; process budget: {HostMemoryBudget.TotalBytes / MiB} MiB"
+                    : string.Empty;
+
+                Logger.Info?.Print(LogClass.Gpu, $"AutoDelete cache memory limit: {_maxCacheMemoryUsage / MiB} MiB (Apple reported unified heap: {context.Capabilities.MaximumGpuMemory / MiB} MiB; requested: {GraphicsConfig.TextureCacheLimitMiB} MiB, 0 = automatic{basis})");
                 return;
             }
 
@@ -218,6 +241,46 @@ namespace Ryujinx.Graphics.Gpu.Image
             {
                 RemoveLeastUsedTexture();
             }
+        }
+
+        private const ulong TrimFloorDivisor = 8;
+
+        /// <summary>
+        /// Evicts textures in response to host memory pressure, in proportion to what the cache is
+        /// actually holding. The limit itself is left alone, so the cache refills as it is used again.
+        /// </summary>
+        /// <param name="level">How much the host wants back</param>
+        /// <returns>Number of bytes evicted</returns>
+        public ulong Trim(MemoryPressureLevel level)
+        {
+            if (!GraphicsConfig.EnableHostMemoryBudgetTracking)
+            {
+                return 0;
+            }
+
+
+            ulong target = level switch
+            {
+                MemoryPressureLevel.Critical => _totalSize / 2,
+                MemoryPressureLevel.Warning => _totalSize - (_totalSize / 4),
+                _ => _maxCacheMemoryUsage,
+            };
+
+            target = Math.Max(target, _maxCacheMemoryUsage / TrimFloorDivisor);
+
+            if (target >= _totalSize)
+            {
+                return 0;
+            }
+
+            ulong before = _totalSize;
+
+            while (_totalSize > target && _textures.Count > 0)
+            {
+                RemoveLeastUsedTexture();
+            }
+
+            return before - _totalSize;
         }
 
         /// <summary>

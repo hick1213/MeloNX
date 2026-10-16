@@ -202,7 +202,6 @@ namespace Ryujinx.Library
                             using UniqueRef<IFile> npdmFile = new();
                             LibHac.Result result = pfs.OpenFile(ref npdmFile.Ref, "/main.npdm".ToU8Span(), OpenMode.Read);
 
-                            // Fix: original had inverted logic — only read npdm when PathNotFound is NOT the result
                             if (!LibHac.Fs.ResultFs.PathNotFound.Includes(result))
                             {
                                 Ryujinx.HLE.Loaders.Npdm.Npdm npdm = new(npdmFile.Get.AsStream());

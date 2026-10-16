@@ -748,9 +748,9 @@ namespace Ryujinx.Graphics.Vulkan
                 {
                     UpdateAndBind(cbs, program, PipelineBase.StorageSetIndex, pbp);
                 }
-                catch 
+                catch
                 {
-                    UpdateAndBind(cbs, PipelineBase.TextureSetIndex, pbp);
+                    UpdateAndBind(cbs, PipelineBase.StorageSetIndex, pbp);
                 }
             }
 

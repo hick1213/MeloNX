@@ -60,6 +60,29 @@ namespace Ryujinx.Graphics.Vulkan
 
         public bool IsDeviceExtensionPresent(string extension) => DeviceExtensions.Contains(extension);
 
+        public unsafe bool SupportsPipelineCreationCacheControl(Vk api)
+        {
+            if (!IsDeviceExtensionPresent("VK_EXT_pipeline_creation_cache_control"))
+            {
+                return false;
+            }
+
+            PhysicalDevicePipelineCreationCacheControlFeaturesEXT featuresPipelineCreationCacheControl = new()
+            {
+                SType = StructureType.PhysicalDevicePipelineCreationCacheControlFeaturesExt,
+            };
+
+            PhysicalDeviceFeatures2 features2 = new()
+            {
+                SType = StructureType.PhysicalDeviceFeatures2,
+                PNext = &featuresPipelineCreationCacheControl,
+            };
+
+            api.GetPhysicalDeviceFeatures2(PhysicalDevice, &features2);
+
+            return featuresPipelineCreationCacheControl.PipelineCreationCacheControl;
+        }
+
         public unsafe bool TryGetPhysicalDeviceDriverPropertiesKHR(Vk api, out PhysicalDeviceDriverPropertiesKHR res)
         {
             if (!IsDeviceExtensionPresent("VK_KHR_driver_properties"))

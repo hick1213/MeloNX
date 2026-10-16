@@ -214,5 +214,51 @@ namespace Ryujinx.Graphics.Texture
 
             return output;
         }
+
+        /// <summary>
+        /// Converts unsigned R16G16B16A16 float data to the packed R11G11B10 float format, dropping alpha.
+        /// </summary>
+        public static MemoryOwner<byte> ConvertR16G16B16A16FloatToR11G11B10Float(ReadOnlySpan<byte> data)
+        {
+            ReadOnlySpan<ulong> inputSpan = MemoryMarshal.Cast<byte, ulong>(data);
+
+            MemoryOwner<byte> output = MemoryOwner<byte>.Rent(inputSpan.Length * 4);
+            Span<uint> outputSpan = MemoryMarshal.Cast<byte, uint>(output.Span);
+
+            for (int i = 0; i < inputSpan.Length; i++)
+            {
+                ulong texel = inputSpan[i];
+
+                uint r = HalfToUFloat((ushort)texel, 4, 0x7bf);
+                uint g = HalfToUFloat((ushort)(texel >> 16), 4, 0x7bf);
+                uint b = HalfToUFloat((ushort)(texel >> 32), 5, 0x3df);
+
+                outputSpan[i] = r | (g << 11) | (b << 22);
+            }
+
+            return output;
+        }
+
+        private static uint HalfToUFloat(ushort half, int droppedBits, uint maxFinite)
+        {
+            if ((half & 0x8000) != 0)
+            {
+                return 0;
+            }
+
+            uint value = half;
+
+            if ((value & 0x7c00) == 0x7c00)
+            {
+                // NaN becomes zero, infinity becomes the largest finite value.
+                return (value & 0x3ff) != 0 ? 0 : maxFinite;
+            }
+
+            // Round to nearest even. A carry out of the mantissa correctly increments the exponent.
+            uint roundBit = 1u << (droppedBits - 1);
+            uint rounded = (value + roundBit - 1 + ((value >> droppedBits) & 1)) >> droppedBits;
+
+            return Math.Min(rounded, maxFinite);
+        }
     }
 }

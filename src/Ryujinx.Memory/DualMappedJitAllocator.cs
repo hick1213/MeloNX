@@ -38,9 +38,9 @@ namespace Ryujinx.Memory
 
         static public bool dualMappingEnabled => Environment.GetEnvironmentVariable("DUAL_MAPPED_JIT") == "1"; 
 
-        static private bool usingNewMapping = false;
+        static private bool usingNewMapping = true;
 
-        public DualMappedJitAllocator(ulong size)
+        public DualMappedJitAllocator(ulong size, nint? mapping = null)
         {
             var stackTrace = new StackTrace(1, false);
             var callingMethod = stackTrace.GetFrame(0)?.GetMethod();
@@ -48,7 +48,7 @@ namespace Ryujinx.Memory
             Logger.Info?.Print(LogClass.Cpu,
                 $"Allocating dual-mapped JIT memory of size {size} bytes, called by {callingMethod?.DeclaringType?.FullName}.{callingMethod?.Name} with {hasTXM}, {dualMappingEnabled}");
             Size = size;
-            AllocateDualMapping();
+            AllocateDualMapping(mapping);
         }
 
         nint? BreakGetJITMapping(nuint bytes)
@@ -72,17 +72,29 @@ namespace Ryujinx.Memory
             }
         }
 
-        private void AllocateDualMapping()
+        private void AllocateDualMapping(nint? mapping = null)
         {
             nint? _mmapPtr = null;
 
             if (hasTXM)
             {
-                _mmapPtr = BreakGetJITMapping((nuint)Size);
+                if (mapping is not null) 
+                {
+                    unsafe 
+                    {
+                        byte* pByte = (byte*)mapping.Value;
+                        _mmapPtr = (nint)BreakGetJITMappingPub(pByte, (nuint)Size);
+                    }
+                }
+                else
+                {
+                    _mmapPtr = BreakGetJITMapping((nuint)Size);
+                } 
+
             }
             else
             {
-                _mmapPtr = Mmap(0, Size, MmapProts.PROT_READ | MmapProts.PROT_EXEC, MmapFlags.MAP_ANONYMOUS | MmapFlags.MAP_PRIVATE, -1, 0);
+                _mmapPtr = mapping ?? Mmap(0, Size, MmapProts.PROT_READ | MmapProts.PROT_EXEC, MmapFlags.MAP_ANONYMOUS | MmapFlags.MAP_PRIVATE, -1, 0);
             }
 
              if (_mmapPtr == null || _mmapPtr == MAP_FAILED)

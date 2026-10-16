@@ -118,8 +118,8 @@ struct InGameConfigView: View {
                     Text("No controllers selected, keyboard will be used")
                         .foregroundColor(.secondary)
                 } else {
-                    ForEach(Array(controllerManager.selectedControllers.enumerated()), id: \.offset) { index, id in
-                        ControllerRow(index: index, controllerId: id, controllerManager: controllerManager)
+                    ForEach(Array(controllerManager.resolvedSelection.enumerated()), id: \.offset) { index, entry in
+                        ControllerRow(index: index, controllerId: entry.id, controllerManager: controllerManager)
                     }
                 }
                 if hasAvailableControllers {

@@ -331,6 +331,11 @@ namespace Ryujinx.Graphics.Vulkan
                 usage |= BufferUsageFlags.IndirectBufferBit;
             }
 
+            if (!sparseCompatible && gd.DonatedBufferAllocator != null && gd.DonatedBufferAllocator.TryCreate(size, usage, GetMemoryFlags(type), out VkBuffer donatedBuffer, out MemoryAllocation donatedAllocation))
+            {
+                return (donatedBuffer, donatedAllocation, type);
+            }
+
             BufferCreateInfo bufferCreateInfo = new()
             {
                 SType = StructureType.BufferCreateInfo,
@@ -351,14 +356,7 @@ namespace Ryujinx.Graphics.Vulkan
 
             do
             {
-                MemoryPropertyFlags allocateFlags = type switch
-                {
-                    BufferAllocationType.HostMappedNoCache => DefaultBufferMemoryNoCacheFlags,
-                    BufferAllocationType.HostMapped => DefaultBufferMemoryFlags,
-                    BufferAllocationType.DeviceLocal => DeviceLocalBufferMemoryFlags,
-                    BufferAllocationType.DeviceLocalMapped => DeviceLocalMappedBufferMemoryFlags,
-                    _ => DefaultBufferMemoryFlags,
-                };
+                MemoryPropertyFlags allocateFlags = GetMemoryFlags(type);
 
                 // If an allocation with this memory type fails, fall back to the previous one.
                 try
@@ -382,6 +380,15 @@ namespace Ryujinx.Graphics.Vulkan
 
             return (buffer, allocation, type);
         }
+
+        private static MemoryPropertyFlags GetMemoryFlags(BufferAllocationType type) => type switch
+        {
+            BufferAllocationType.HostMappedNoCache => DefaultBufferMemoryNoCacheFlags,
+            BufferAllocationType.HostMapped => DefaultBufferMemoryFlags,
+            BufferAllocationType.DeviceLocal => DeviceLocalBufferMemoryFlags,
+            BufferAllocationType.DeviceLocalMapped => DeviceLocalMappedBufferMemoryFlags,
+            _ => DefaultBufferMemoryFlags,
+        };
 
         public BufferHolder Create(
             VulkanRenderer gd,

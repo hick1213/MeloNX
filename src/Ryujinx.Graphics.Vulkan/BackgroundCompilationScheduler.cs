@@ -12,21 +12,17 @@ namespace Ryujinx.Graphics.Vulkan
         private readonly WorkerQueue _pipelineQueue;
         private readonly PipelineCacheManager _pipelineCacheManager;
 
-        public static int PipelineWorkerCount => GetBackgroundPipelineCompileThreadCount();
+        public static int PipelineWorkerCount => GetBackgroundCompileThreadCount();
+        public static int PipelineCacheCount => PipelineWorkerCount + 1;
 
         public BackgroundCompilationScheduler(PipelineCacheManager pipelineCacheManager)
         {
             _pipelineCacheManager = pipelineCacheManager;
-            _shaderQueue = new("Shader", GetBackgroundShaderCompileThreadCount());
+            _shaderQueue = new("Shader", GetBackgroundCompileThreadCount());
             _pipelineQueue = new("Pipeline", PipelineWorkerCount);
         }
 
-        private static int GetBackgroundShaderCompileThreadCount()
-        {
-            return Math.Max(1, Math.Min(2, Environment.ProcessorCount / 4));
-        }
-
-        private static int GetBackgroundPipelineCompileThreadCount()
+        private static int GetBackgroundCompileThreadCount()
         {
             return Math.Max(1, Math.Min(2, Environment.ProcessorCount / 4));
         }
@@ -36,7 +32,7 @@ namespace Ryujinx.Graphics.Vulkan
             return _shaderQueue.Schedule(_ => action(), highPriority);
         }
 
-        public Task SchedulePipelineCompile(Action<PipelineCache> action, bool highPriority = false)
+        public Task SchedulePipelineCompile(Action<PipelineCache> action, bool highPriority = false, bool demanded = false)
         {
             return _pipelineQueue.Schedule(workerIndex =>
             {
@@ -48,7 +44,17 @@ namespace Ryujinx.Graphics.Vulkan
                 {
                     _pipelineCacheManager.NotifyWorkerPipelineCreated(workerIndex);
                 }
-            }, highPriority);
+            }, highPriority, demanded);
+        }
+
+        public void PromoteShaderCompile(Task task)
+        {
+            _shaderQueue.Promote(task);
+        }
+
+        public void PromotePipelineCompile(Task task)
+        {
+            _pipelineQueue.Promote(task);
         }
 
         public void Dispose()
@@ -64,6 +70,8 @@ namespace Ryujinx.Graphics.Vulkan
                 private readonly Action<int> _action;
 
                 public TaskCompletionSource<bool> Completion { get; }
+                public LinkedListNode<WorkItem> Node { get; set; }
+                public bool Demanded { get; set; }
 
                 public WorkItem(Action<int> action)
                 {
@@ -78,23 +86,24 @@ namespace Ryujinx.Graphics.Vulkan
                         _action(workerIndex);
                         Completion.TrySetResult(true);
                     }
-                    catch (Exception ex)
+                    catch (Exception exception)
                     {
-                        Completion.TrySetException(ex);
+                        Completion.TrySetException(exception);
                     }
                 }
 
-                public void Cancel(ObjectDisposedException exception)
+                public void Cancel(Exception exception)
                 {
                     Completion.TrySetException(exception);
                 }
             }
 
-            private readonly Lock _queueLock = new();
-            private readonly Queue<WorkItem> _highPriorityQueue = [];
-            private readonly Queue<WorkItem> _lowPriorityQueue = [];
-            private readonly SemaphoreSlim _signal = new(0);
-            private readonly Thread[] _workers;
+            private readonly object _queueLock = new();
+            private readonly LinkedList<WorkItem> _demandQueue = new();
+            private readonly LinkedList<WorkItem> _highPriorityQueue = new();
+            private readonly LinkedList<WorkItem> _lowPriorityQueue = new();
+            private readonly Dictionary<Task, WorkItem> _scheduled = [];
+            private readonly Thread[] _threads;
             private readonly string _name;
 
             private bool _stopping;
@@ -102,76 +111,142 @@ namespace Ryujinx.Graphics.Vulkan
             public WorkerQueue(string name, int workerCount)
             {
                 _name = name;
-                _workers = new Thread[workerCount];
+                _threads = new Thread[workerCount + 1];
 
                 for (int index = 0; index < workerCount; index++)
                 {
                     int workerIndex = index;
-                    Thread worker = new(() => WorkerLoop(workerIndex))
+
+                    _threads[index] = new Thread(() => WorkerLoop(workerIndex, demandOnly: false))
                     {
                         IsBackground = true,
                         Name = $"Vulkan {name} Compile {index}",
                         Priority = ThreadPriority.BelowNormal,
                     };
+                }
 
-                    _workers[index] = worker;
-                    worker.Start();
+                
+                _threads[workerCount] = new Thread(() => WorkerLoop(workerCount, demandOnly: true))
+                {
+                    IsBackground = true,
+                    Name = $"Vulkan {name} Demand Compile",
+                    Priority = ThreadPriority.Normal,
+                };
+
+                foreach (Thread thread in _threads)
+                {
+                    thread.Start();
                 }
             }
 
-            public Task Schedule(Action<int> action, bool highPriority)
+            public Task Schedule(Action<int> action, bool highPriority, bool demanded = false)
             {
                 WorkItem item = new(action);
 
                 lock (_queueLock)
                 {
-                    ObjectDisposedException.ThrowIf(_stopping, typeof(WorkerQueue));
+                    if (_stopping)
+                    {
+                        item.Cancel(new ObjectDisposedException($"{_name} background compilation queue"));
 
-                    if (highPriority)
-                    {
-                        _highPriorityQueue.Enqueue(item);
-                    }
-                    else
-                    {
-                        _lowPriorityQueue.Enqueue(item);
+                        return item.Completion.Task;
                     }
 
-                    _signal.Release();
+                    _scheduled.Add(item.Completion.Task, item);
+
+                    Enqueue(item, demanded, highPriority);
+
+                    Monitor.PulseAll(_queueLock);
                 }
 
                 return item.Completion.Task;
             }
 
-            private void WorkerLoop(int workerIndex)
+            public void Promote(Task task)
+            {
+                if (task == null)
+                {
+                    return;
+                }
+
+                lock (_queueLock)
+                {
+                    if (_stopping ||
+                        !_scheduled.TryGetValue(task, out WorkItem item) ||
+                        item.Demanded ||
+                        item.Node == null)
+                    {
+                        return;
+                    }
+
+                    item.Node.List.Remove(item.Node);
+
+                    Enqueue(item, demanded: true, highPriority: true);
+
+                    Monitor.PulseAll(_queueLock);
+                }
+            }
+
+            private void Enqueue(WorkItem item, bool demanded, bool highPriority)
+            {
+                LinkedList<WorkItem> queue = demanded
+                    ? _demandQueue
+                    : highPriority
+                        ? _highPriorityQueue
+                        : _lowPriorityQueue;
+
+                item.Demanded = demanded;
+                item.Node = queue.AddLast(item);
+            }
+
+            private void WorkerLoop(int workerIndex, bool demandOnly)
             {
                 while (true)
                 {
-                    _signal.Wait();
-
                     WorkItem item;
 
                     lock (_queueLock)
                     {
-                        if (_highPriorityQueue.Count != 0)
+                        while ((item = TryTake(demandOnly)) == null)
                         {
-                            item = _highPriorityQueue.Dequeue();
-                        }
-                        else if (_lowPriorityQueue.Count != 0)
-                        {
-                            item = _lowPriorityQueue.Dequeue();
-                        }
-                        else if (_stopping)
-                        {
-                            return;
-                        }
-                        else
-                        {
-                            continue;
+                            if (_stopping)
+                            {
+                                return;
+                            }
+
+                            Monitor.Wait(_queueLock);
                         }
                     }
 
                     item.Execute(workerIndex);
+
+                    lock (_queueLock)
+                    {
+                        _scheduled.Remove(item.Completion.Task);
+                    }
                 }
+            }
+
+            private WorkItem TryTake(bool demandOnly)
+            {
+                LinkedListNode<WorkItem> node = _demandQueue.First;
+
+                if (node == null && !demandOnly)
+                {
+                    node = _highPriorityQueue.First ?? _lowPriorityQueue.First;
+                }
+
+                if (node == null)
+                {
+                    return null;
+                }
+
+                node.List.Remove(node);
+
+                WorkItem item = node.Value;
+                item.Node = null;
+
+                return item;
             }
 
             public void Dispose()
@@ -180,17 +255,20 @@ namespace Ryujinx.Graphics.Vulkan
 
                 lock (_queueLock)
                 {
+                    if (_stopping)
+                    {
+                        return;
+                    }
+
                     _stopping = true;
 
-                    while (_highPriorityQueue.TryDequeue(out WorkItem highItem))
-                    {
-                        pending.Add(highItem);
-                    }
+                    Drain(_demandQueue, pending);
+                    Drain(_highPriorityQueue, pending);
+                    Drain(_lowPriorityQueue, pending);
 
-                    while (_lowPriorityQueue.TryDequeue(out WorkItem lowItem))
-                    {
-                        pending.Add(lowItem);
-                    }
+                    _scheduled.Clear();
+
+                    Monitor.PulseAll(_queueLock);
                 }
 
                 if (pending.Count != 0)
@@ -203,14 +281,22 @@ namespace Ryujinx.Graphics.Vulkan
                     }
                 }
 
-                _signal.Release(_workers.Length);
-
-                foreach (Thread worker in _workers)
+                foreach (Thread thread in _threads)
                 {
-                    worker.Join();
+                    thread.Join();
                 }
+            }
 
-                _signal.Dispose();
+            private static void Drain(LinkedList<WorkItem> queue, List<WorkItem> pending)
+            {
+                while (queue.First != null)
+                {
+                    WorkItem item = queue.First.Value;
+
+                    queue.RemoveFirst();
+                    item.Node = null;
+                    pending.Add(item);
+                }
             }
         }
     }

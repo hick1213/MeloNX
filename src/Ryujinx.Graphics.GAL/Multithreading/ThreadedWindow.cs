@@ -40,6 +40,8 @@ namespace Ryujinx.Graphics.GAL.Multithreading
 
         public void SetScalingFilterLevel(float level) { }
 
+        public void SetMetalFxUpscaleFactor(float factor) { }
+
         public void SetColorSpacePassthrough(bool colorSpacePassthroughEnabled) { }
     }
 }

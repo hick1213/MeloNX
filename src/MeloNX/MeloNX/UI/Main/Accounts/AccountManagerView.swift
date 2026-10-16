@@ -11,7 +11,6 @@ struct AccountManagerView: View {
     @EnvironmentObject var ryujinx: RyujinxController
     @State private var profiles: Profiles? = nil
     @State var test = false
-    @State var editAccount = false
     @Environment(\.presentationMode) var presentationMode
     let profilePath = URL.documentsDirectory.appendingPathComponent("system").appendingPathComponent("Profiles.json")
     @State var account: Account? = nil
@@ -81,8 +80,8 @@ struct AccountManagerView: View {
                                 
                                 Button {
                                     account = profile
-                                    print(account == nil) // this is required to for the sheet to show, don't ask.
-                                    editAccount = true
+                                    // memorial for the "this is required for the sheet to show, don't ask." comment
+                                    // it won't be missed
                                 } label: {
                                     Image(systemName: "pencil")
                                 }
@@ -103,7 +102,7 @@ struct AccountManagerView: View {
                     }) {
                         CreateAccount()
                     }
-                    .sheet(isPresented: $editAccount, onDismiss: {
+                    .sheet(item: $account, onDismiss: {
                         guard let account else { loadAccounts(); return }
                         var profiles2 = profiles
                         guard let index = profiles2.profiles.firstIndex(where: { $0.user_id == account.user_id }) else { loadAccounts(); return }
@@ -113,7 +112,7 @@ struct AccountManagerView: View {
                         saveAccounts(profiles2)
                         loadAccounts()
                         self.account = nil
-                    }) {
+                    }) { account in
                         EditAccount(account: $account)
                     }
                     .toolbar {

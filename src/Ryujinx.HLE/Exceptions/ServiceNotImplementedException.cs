@@ -20,12 +20,15 @@ namespace Ryujinx.HLE.Exceptions
         public IpcMessage Request { get; }
         private string MethodName { get; }
 
+        private readonly byte[] _requestRawData;
+
         public ServiceNotImplementedException(IpcService service, ServiceCtx context, string message = "The service call is not implemented.", [CallerMemberName] string methodName = null) : base(message)
         {
             Service = service;
             Context = context;
             Request = context.Request;
             MethodName = methodName;
+            _requestRawData = context.Request.RawData.ToArray();
         }
 
         public ServiceNotImplementedException(IpcService service, ServiceCtx context, string message, Exception inner, [CallerMemberName] string methodName = null) : base(message, inner)
@@ -34,6 +37,7 @@ namespace Ryujinx.HLE.Exceptions
             Context = context;
             Request = context.Request;
             MethodName = methodName;
+            _requestRawData = context.Request.RawData.ToArray();
         }
 
         public override string Message
@@ -121,7 +125,7 @@ namespace Ryujinx.HLE.Exceptions
             }
 
             sb.AppendLine("Raw Request Data:");
-            sb.Append(HexUtils.HexTable(Request.RawData));
+            sb.Append(HexUtils.HexTable(_requestRawData));
 
             return sb.ToString();
         }

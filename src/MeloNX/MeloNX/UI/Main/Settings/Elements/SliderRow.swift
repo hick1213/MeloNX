@@ -15,6 +15,8 @@ struct SliderRow: View {
     let minLabel: String
     let maxLabel: String
     let format: String
+    let suffix: String
+    let maximumValueDisplay: String?
     let extended: String?
     @ObservedObject private var settings = NativeSettingsManager.shared
 
@@ -25,6 +27,8 @@ struct SliderRow: View {
          minLabel: String,
          maxLabel: String,
          format: String = "%.2f",
+         suffix: String = "x",
+         maximumValueDisplay: String? = nil,
          extended: String? = nil) {
         self.label = label
         self.value = value
@@ -33,11 +37,19 @@ struct SliderRow: View {
         self.minLabel = minLabel
         self.maxLabel = maxLabel
         self.format = format
+        self.suffix = suffix
+        self.maximumValueDisplay = maximumValueDisplay
         self.extended = extended
     }
 
     var displayValue: String {
-        let v = String(format: format, value.wrappedValue) + "x"
+        let v: String
+        if let maximumValueDisplay,
+           abs(value.wrappedValue - range.upperBound) < (step / 2) {
+            v = maximumValueDisplay
+        } else {
+            v = String(format: format, value.wrappedValue) + suffix
+        }
         if let ext = extended { return "\(v) \(ext)" }
         return v
     }

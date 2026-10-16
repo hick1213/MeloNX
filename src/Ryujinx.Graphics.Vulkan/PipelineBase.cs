@@ -31,7 +31,7 @@ namespace Ryujinx.Graphics.Vulkan
 
         protected readonly VulkanRenderer Gd;
         protected readonly Device Device;
-        public readonly PipelineCache PipelineCache;
+        public PipelineCache PipelineCache => Gd.PipelineCacheManager.MainCache;
 
         public readonly AutoFlushCounter AutoFlush;
         public readonly Action EndRenderPassDelegate;
@@ -107,8 +107,6 @@ namespace Ryujinx.Graphics.Vulkan
 
             AutoFlush = new AutoFlushCounter(gd);
             EndRenderPassDelegate = EndRenderPass;
-
-            PipelineCache = gd.PipelineCacheManager.MainCache;
 
             _descriptorSetUpdater = new DescriptorSetUpdater(gd, device);
             _vertexBufferUpdater = new VertexBufferUpdater(gd);
@@ -1650,11 +1648,18 @@ namespace Ryujinx.Graphics.Vulkan
         private bool RecreateGraphicsPipelineIfNeeded()
         {
             bool canSkipForBackgroundCompile = CanSkipForBackgroundCompile(allowAsyncSkip: true);
-            bool requiresCompletePass = canSkipForBackgroundCompile && Gd.IsCriticalOffscreenTarget(FramebufferParams);
+
+            bool requiresCompletePipeline = canSkipForBackgroundCompile &&
+                Gd.IsCriticalOffscreenTarget(FramebufferParams);
+
+            if (canSkipForBackgroundCompile)
+            {
+                _program.PromoteBackgroundCompilation();
+            }
 
             if (canSkipForBackgroundCompile && !UpdateProgramStagesIfReady(blocking: false))
             {
-                if (!requiresCompletePass ||
+                if (!requiresCompletePipeline ||
                     !_program.WaitForShaderModules(Timeout.Infinite) ||
                     !UpdateProgramStagesIfReady(blocking: false))
                 {
@@ -1712,7 +1717,10 @@ namespace Ryujinx.Graphics.Vulkan
 
             if (UpdateFeedbackLoop() || _graphicsStateDirty || Pbp != PipelineBindPoint.Graphics)
             {
-                if (!CreatePipeline(PipelineBindPoint.Graphics, allowAsyncSkip: true))
+                if (!CreatePipeline(
+                    PipelineBindPoint.Graphics,
+                    allowAsyncSkip: true,
+                    waitForBackgroundGraphicsPipeline: requiresCompletePipeline))
                 {
                     return false;
                 }
@@ -1730,7 +1738,10 @@ namespace Ryujinx.Graphics.Vulkan
             return true;
         }
 
-        private bool CreatePipeline(PipelineBindPoint pbp, bool allowAsyncSkip = false)
+        private bool CreatePipeline(
+            PipelineBindPoint pbp,
+            bool allowAsyncSkip = false,
+            bool waitForBackgroundGraphicsPipeline = false)
         {
             if (_program == null)
             {
@@ -1825,20 +1836,53 @@ namespace Ryujinx.Graphics.Vulkan
                     {
                         Auto<DisposableRenderPass> renderPass = _renderPass;
 
-                        if (canSkipForBackgroundCompile &&
+                        if (!canSkipForBackgroundCompile)
+                        {
+                            _program.TryWaitForBackgroundGraphicsPipeline(
+                                ref key,
+                                Timeout.Infinite,
+                                out pipeline);
+                        }
+
+                        if (pipeline == null &&
+                            canSkipForBackgroundCompile &&
+                            Gd.PipelineCacheManager.SupportsNonBlockingPipelineCreation)
+                        {
+                            pipeline = _newState.CreateGraphicsPipeline(
+                                Gd,
+                                Device,
+                                _program,
+                                PipelineCache,
+                                renderPass.Get(Cbs).Value,
+                                throwOnError: false,
+                                cachePipelineFailure: false,
+                                failOnCompileRequired: true);
+                        }
+
+                        if (pipeline == null &&
+                            canSkipForBackgroundCompile &&
                             _program.QueueBackgroundGraphicsPipeline(ref _newState, renderPass))
                         {
-                            if (!Gd.IsCriticalOffscreenTarget(FramebufferParams) ||
-                                !_program.TryWaitForBackgroundGraphicsPipeline(
-                                    ref key,
-                                    Timeout.Infinite,
-                                    out pipeline))
+                            if (!waitForBackgroundGraphicsPipeline)
                             {
                                 _renderPassHadSkippedDraw = true;
                                 return false;
                             }
+
+                            if (!_program.TryWaitForBackgroundGraphicsPipeline(
+                                ref key,
+                                Timeout.Infinite,
+                                out pipeline))
+                            {
+                                pipeline = _newState.CreateGraphicsPipeline(
+                                    Gd,
+                                    Device,
+                                    _program,
+                                    PipelineCache,
+                                    renderPass.Get(Cbs).Value);
+                            }
                         }
-                        else
+                        else if (pipeline == null)
                         {
                             pipeline = _newState.CreateGraphicsPipeline(Gd, Device, _program, PipelineCache, renderPass.Get(Cbs).Value);
                         }

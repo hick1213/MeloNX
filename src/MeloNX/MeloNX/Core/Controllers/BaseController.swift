@@ -36,6 +36,8 @@ class BaseController: Equatable, Identifiable {
     var lastAccel = SIMD3<Float>(repeating: 0)
     var lastGyro = SIMD3<Float>(repeating: 0)
     let filterAlpha: Float = 0.05
+    let motionSubmitInterval: UInt64 = 10_000_000 // 100Hz, in nanoseconds
+    var lastMotionSubmit: UInt64 = 0
     
     private var rumbleController: RumbleController?
     var motionManager = CMMotionManager()
@@ -71,7 +73,7 @@ class BaseController: Equatable, Identifiable {
         let queueLabel = self.virtual ? "com.stossy11.MeloNX.controller.virtual" : "com.stossy11.MeloNX.controller.\(identifier)"
         
         self.inputQueue = DispatchQueue(label: queueLabel, qos: .userInteractive)
-        self.motionQueue = DispatchQueue(label: queueLabel + ".motion", qos: .background)
+        self.motionQueue = DispatchQueue(label: queueLabel + ".motion", qos: .userInitiated)
         
     }
     
@@ -126,7 +128,11 @@ class BaseController: Equatable, Identifiable {
         let callbackData = dataPtr.load(as: CallbackData.self)
         guard let rumbleData = RumbleData(callbackData: callbackData) else { return }
         
-        instance.rumbleController?.rumble(data: rumbleData)
+        instance.rumble(data: rumbleData)
+    }
+
+    func rumble(data: RumbleData) {
+        rumbleController?.rumble(data: data)
     }
     
     func cool() {

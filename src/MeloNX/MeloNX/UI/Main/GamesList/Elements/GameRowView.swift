@@ -97,7 +97,7 @@ struct GameRowView: View {
             RoundedRectangle(cornerRadius: 12)
                 .fill(.ultraThinMaterial)
         }
-        
+        .menuFocusable(game.id, style: .row)
     }
     
 }

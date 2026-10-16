@@ -1,9 +1,12 @@
-using System.IO;
+using System;
+using System.Buffers.Binary;
 
 namespace Ryujinx.HLE.HOS.Ipc
 {
     struct IpcPtrBuffDesc
     {
+        public const int SizeInBytes = sizeof(uint) * 2;
+
         public ulong Position { get; private set; }
         public uint Index { get; private set; }
         public ulong Size { get; private set; }
@@ -15,10 +18,10 @@ namespace Ryujinx.HLE.HOS.Ipc
             Size = size;
         }
 
-        public IpcPtrBuffDesc(BinaryReader reader)
+        public IpcPtrBuffDesc(ReadOnlySpan<byte> data)
         {
-            ulong word0 = reader.ReadUInt32();
-            ulong word1 = reader.ReadUInt32();
+            ulong word0 = BinaryPrimitives.ReadUInt32LittleEndian(data);
+            ulong word1 = BinaryPrimitives.ReadUInt32LittleEndian(data[sizeof(uint)..]);
 
             Position = word1;
             Position |= (word0 << 20) & 0x0f00000000;

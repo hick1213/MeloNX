@@ -1,5 +1,6 @@
 using Ryujinx.Common;
 using Ryujinx.Graphics.GAL;
+using Ryujinx.Memory;
 using Ryujinx.Graphics.Gpu.Engine.Threed;
 using Ryujinx.Graphics.Gpu.Engine.Twod;
 using Ryujinx.Graphics.Gpu.Engine.Types;
@@ -215,6 +216,16 @@ namespace Ryujinx.Graphics.Gpu.Image
             }
 
             return true;
+        }
+
+        /// <summary>
+        /// Evicts cached textures in response to host memory pressure.
+        /// </summary>
+        /// <param name="level">How much the host wants back</param>
+        /// <returns>Number of bytes evicted</returns>
+        public ulong Trim(MemoryPressureLevel level)
+        {
+            return _cache.Trim(level);
         }
 
         /// <summary>

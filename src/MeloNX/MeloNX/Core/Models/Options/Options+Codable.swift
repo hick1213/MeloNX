@@ -23,7 +23,8 @@ extension Options: Codable {
         case resScale, maxAnisotropy, aspectRatio, backendThreading, enableAsyncShaderCompilation, disableMacroHLE
         case textureCacheLimitMiB
         case graphicsShadersDumpPath, graphicsBackend, preferredGPUVendor
-        case antiAliasing, scalingFilter, scalingFilterLevel
+        case antiAliasing, scalingFilter, scalingFilterLevel, metalFxUpscaleFactor
+        case enableHostMemoryBudgetTracking
         case expandRAM, ignoreMissingServices
         case inputPath
     }
@@ -85,12 +86,23 @@ extension Options: Codable {
         try c.encode(antiAliasing.rawValue,      forKey: .antiAliasing)
         try c.encode(scalingFilter.rawValue,     forKey: .scalingFilter)
         try c.encode(scalingFilterLevel,         forKey: .scalingFilterLevel)
+        try c.encode(metalFxUpscaleFactor,        forKey: .metalFxUpscaleFactor)
+        try c.encode(enableHostMemoryBudgetTracking, forKey: .enableHostMemoryBudgetTracking)
         try c.encode(expandRAM,                  forKey: .expandRAM)
         try c.encode(ignoreMissingServices,      forKey: .ignoreMissingServices)
     }
     
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
+        
+        func decodeCase<T>(
+            _ type: T.Type,
+            forKey key: CodingKeys,
+            default defaultValue: T
+        ) throws -> T where T: CaseIterable & RawRepresentable, T.RawValue: Decodable & Equatable {
+            let rawValue = try c.decodeIfPresent(T.RawValue.self, forKey: key) ?? defaultValue.rawValue
+            return T.allCases.first(where: { $0.rawValue == rawValue }) ?? defaultValue
+        }
         
         inputPath = ""
         
@@ -105,7 +117,7 @@ extension Options: Codable {
         vSyncMode                  = VSyncMode(rawValue: try c.decodeIfPresent(Int32.self, forKey: .vSyncMode) ?? (disableVSync ? VSyncMode.unbounded.rawValue : VSyncMode.switchMode.rawValue)) ?? .switchMode
         customVSyncInterval        = try c.decodeIfPresent(Int32.self,  forKey: .customVSyncInterval)      ?? 120
         disableShaderCache         = try c.decodeIfPresent(Bool.self,   forKey: .disableShaderCache)       ?? true
-        enableTextureRecompression = try c.decodeIfPresent(Bool.self,   forKey: .enableTextureRecompression) ?? false
+        enableTextureRecompression = try c.decodeIfPresent(Bool.self,   forKey: .enableTextureRecompression) ?? true
         disableDockedMode          = try c.decodeIfPresent(Bool.self,   forKey: .disableDockedMode)        ?? true
         systemTimeZone             = try c.decodeIfPresent(String.self, forKey: .systemTimeZone)           ?? "UTC"
         systemTimeOffset           = try c.decodeIfPresent(Int64.self,  forKey: .systemTimeOffset)         ?? 0
@@ -129,28 +141,32 @@ extension Options: Codable {
         enableAsyncShaderCompilation = try c.decodeIfPresent(Bool.self, forKey: .enableAsyncShaderCompilation) ?? false
         disableMacroHLE            = try c.decodeIfPresent(Bool.self,   forKey: .disableMacroHLE)          ?? false
         preferredGPUVendor         = try c.decodeIfPresent(String.self, forKey: .preferredGPUVendor)       ?? ""
-        scalingFilterLevel         = try c.decodeIfPresent(Int32.self,  forKey: .scalingFilterLevel)       ?? 0
+        scalingFilterLevel         = try c.decodeIfPresent(Int32.self,  forKey: .scalingFilterLevel)       ?? 60
+        let decodedMetalFxFactor   = try c.decodeIfPresent(Float.self,  forKey: .metalFxUpscaleFactor)     ?? 2.0
+        let clampedMetalFxFactor   = min(4.0, max(1.0, decodedMetalFxFactor))
+        metalFxUpscaleFactor       = clampedMetalFxFactor > 3.0 ? 4.0 : (clampedMetalFxFactor * 10).rounded() / 10
+        enableHostMemoryBudgetTracking = try c.decodeIfPresent(Bool.self, forKey: .enableHostMemoryBudgetTracking) ?? true
         expandRAM                  = try c.decodeIfPresent(Bool.self,   forKey: .expandRAM)                ?? false
         ignoreMissingServices      = try c.decodeIfPresent(Bool.self,   forKey: .ignoreMissingServices)    ?? false
         
-        controllerType1        = ControllerType(rawValue: try c.decodeIfPresent(UInt32.self, forKey: .controllerType1)        ?? ControllerType.none.rawValue)
-        controllerType2        = ControllerType(rawValue: try c.decodeIfPresent(UInt32.self, forKey: .controllerType2)        ?? ControllerType.none.rawValue)
-        controllerType3        = ControllerType(rawValue: try c.decodeIfPresent(UInt32.self, forKey: .controllerType3)        ?? ControllerType.none.rawValue)
-        controllerType4        = ControllerType(rawValue: try c.decodeIfPresent(UInt32.self, forKey: .controllerType4)        ?? ControllerType.none.rawValue)
-        controllerType5        = ControllerType(rawValue: try c.decodeIfPresent(UInt32.self, forKey: .controllerType5)        ?? ControllerType.none.rawValue)
-        controllerType6        = ControllerType(rawValue: try c.decodeIfPresent(UInt32.self, forKey: .controllerType6)        ?? ControllerType.none.rawValue)
-        controllerType7        = ControllerType(rawValue: try c.decodeIfPresent(UInt32.self, forKey: .controllerType7)        ?? ControllerType.none.rawValue)
-        controllerType8        = ControllerType(rawValue: try c.decodeIfPresent(UInt32.self, forKey: .controllerType8)        ?? ControllerType.none.rawValue)
-        hideCursorMode         = HideCursorMode(rawValue: try c.decodeIfPresent(UInt32.self, forKey: .hideCursorMode)         ?? HideCursorMode.onIdle.rawValue)!
-        systemLanguage         = SystemLanguage(rawValue: try c.decodeIfPresent(UInt32.self, forKey: .systemLanguage)         ?? SystemLanguage.americanEnglish.rawValue)!
-        systemRegion           = NativeRegionCode(rawValue:    try c.decodeIfPresent(UInt32.self, forKey: .systemRegion)            ?? NativeRegionCode.USA.rawValue)!
-        memoryManagerMode      = MemoryManagerMode(rawValue: try c.decodeIfPresent(UInt8.self, forKey: .memoryManagerMode)   ?? MemoryManagerMode.hostMappedUnsafe.rawValue)!
-        loggingGraphicsDebugLevel = GraphicsDebugLevel(rawValue: try c.decodeIfPresent(UInt32.self, forKey: .loggingGraphicsDebugLevel) ?? GraphicsDebugLevel.none.rawValue)!
-        aspectRatio            = AspectRatio(rawValue:   try c.decodeIfPresent(UInt32.self, forKey: .aspectRatio)             ?? AspectRatio.fixed16x9.rawValue)!
-        backendThreading       = BackendThreading(rawValue: try c.decodeIfPresent(UInt32.self, forKey: .backendThreading)     ?? BackendThreading.off.rawValue)!
-        graphicsBackend        = GraphicsBackend(rawValue: try c.decodeIfPresent(UInt32.self, forKey: .graphicsBackend)       ?? GraphicsBackend.vulkan.rawValue)!
-        antiAliasing           = AntiAliasing(rawValue:  try c.decodeIfPresent(UInt32.self, forKey: .antiAliasing)            ?? AntiAliasing.none.rawValue)!
-        scalingFilter          = ScalingFilter(rawValue: try c.decodeIfPresent(UInt32.self, forKey: .scalingFilter)           ?? ScalingFilter.bilinear.rawValue)!
+        controllerType1        = try decodeCase(ControllerType.self, forKey: .controllerType1, default: .none)
+        controllerType2        = try decodeCase(ControllerType.self, forKey: .controllerType2, default: .none)
+        controllerType3        = try decodeCase(ControllerType.self, forKey: .controllerType3, default: .none)
+        controllerType4        = try decodeCase(ControllerType.self, forKey: .controllerType4, default: .none)
+        controllerType5        = try decodeCase(ControllerType.self, forKey: .controllerType5, default: .none)
+        controllerType6        = try decodeCase(ControllerType.self, forKey: .controllerType6, default: .none)
+        controllerType7        = try decodeCase(ControllerType.self, forKey: .controllerType7, default: .none)
+        controllerType8        = try decodeCase(ControllerType.self, forKey: .controllerType8, default: .none)
+        hideCursorMode         = try decodeCase(HideCursorMode.self, forKey: .hideCursorMode, default: .onIdle)
+        systemLanguage         = try decodeCase(SystemLanguage.self, forKey: .systemLanguage, default: .americanEnglish)
+        systemRegion           = try decodeCase(NativeRegionCode.self, forKey: .systemRegion, default: .USA)
+        memoryManagerMode      = try decodeCase(MemoryManagerMode.self, forKey: .memoryManagerMode, default: .hostMappedUnsafe)
+        loggingGraphicsDebugLevel = try decodeCase(GraphicsDebugLevel.self, forKey: .loggingGraphicsDebugLevel, default: .none)
+        aspectRatio            = try decodeCase(AspectRatio.self, forKey: .aspectRatio, default: .fixed16x9)
+        backendThreading       = try decodeCase(BackendThreading.self, forKey: .backendThreading, default: .off)
+        graphicsBackend        = try decodeCase(GraphicsBackend.self, forKey: .graphicsBackend, default: .vulkan)
+        antiAliasing           = try decodeCase(AntiAliasing.self, forKey: .antiAliasing, default: .none)
+        scalingFilter          = try decodeCase(ScalingFilter.self, forKey: .scalingFilter, default: .bilinear)
         
         graphicsShadersDumpPath = try c.decodeIfPresent(String.self, forKey: .graphicsShadersDumpPath)
     }
@@ -164,6 +180,10 @@ extension Options: Codable {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(self)
+        try FileManager.default.createDirectory(
+            at: url.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
         try data.write(to: url, options: .atomic)
     }
 }

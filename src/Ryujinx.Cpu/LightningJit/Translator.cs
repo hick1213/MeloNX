@@ -14,7 +14,8 @@ using System.Threading;
 
 namespace Ryujinx.Cpu.LightningJit
 {
-    public class DualMappedMemory {
+    public class DualMappedMemory 
+    {
         private static bool initialized = false;
 
         public static bool InitMemoryCache()
@@ -29,7 +30,7 @@ namespace Ryujinx.Cpu.LightningJit
             {
                 DualMappedNoWxCache.InitMemoryCache();
                 NativeSignalHandler.InitializeSignalHandler();
-
+                
                 initialized = true;
                 return true;
             } catch { return initialized; }

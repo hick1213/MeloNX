@@ -360,9 +360,10 @@ namespace Ryujinx.Graphics.OpenGL
                 {
                     case ScalingFilter.Bilinear:
                     case ScalingFilter.Nearest:
+                    case ScalingFilter.MetalFx:
                         _scalingFilter?.Dispose();
                         _scalingFilter = null;
-                        _isLinear = _currentScalingFilter == ScalingFilter.Bilinear;
+                        _isLinear = _currentScalingFilter != ScalingFilter.Nearest;
                         _upscaledTexture?.Dispose();
                         _upscaledTexture = null;
                         break;
@@ -423,5 +424,7 @@ namespace Ryujinx.Graphics.OpenGL
             _scalingFilterLevel = level;
             _updateScalingFilter = true;
         }
+
+        public void SetMetalFxUpscaleFactor(float factor) { }
     }
 }

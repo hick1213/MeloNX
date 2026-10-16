@@ -376,6 +376,7 @@ namespace Ryujinx.Cpu.Jit
             }
 
             int pages = GetPagesCount(va, (uint)size, out va);
+            ulong pa = GetPhysicalAddressInternal(va);
 
             for (int page = 0; page < pages - 1; page++)
             {
@@ -384,11 +385,14 @@ namespace Ryujinx.Cpu.Jit
                     return false;
                 }
 
-                if (GetPhysicalAddressInternal(va) + PageSize != GetPhysicalAddressInternal(va + PageSize))
+                ulong nextPa = GetPhysicalAddressInternal(va + PageSize);
+
+                if (pa + PageSize != nextPa)
                 {
                     return false;
                 }
 
+                pa = nextPa;
                 va += PageSize;
             }
 
@@ -406,6 +410,7 @@ namespace Ryujinx.Cpu.Jit
             }
 
             int pages = GetPagesCount(va, size, out va);
+            ulong pa = GetPhysicalAddressInternal(va);
 
             for (int page = 0; page < pages - 1; page++)
             {
@@ -414,11 +419,14 @@ namespace Ryujinx.Cpu.Jit
                     return contiguousSize;
                 }
 
-                if (GetPhysicalAddressInternal(va) + PageSize != GetPhysicalAddressInternal(va + PageSize))
+                ulong nextPa = GetPhysicalAddressInternal(va + PageSize);
+
+                if (pa + PageSize != nextPa)
                 {
                     return contiguousSize;
                 }
 
+                pa = nextPa;
                 va += PageSize;
                 contiguousSize += PageSize;
             }
@@ -490,6 +498,7 @@ namespace Ryujinx.Cpu.Jit
 
             ulong regionStart = GetPhysicalAddressInternal(va);
             ulong regionSize = PageSize;
+            ulong pa = regionStart;
 
             for (int page = 0; page < pages - 1; page++)
             {
@@ -500,13 +509,14 @@ namespace Ryujinx.Cpu.Jit
 
                 ulong newPa = GetPhysicalAddressInternal(va + PageSize);
 
-                if (GetPhysicalAddressInternal(va) + PageSize != newPa)
+                if (pa + PageSize != newPa)
                 {
                     yield return new MemoryRange(regionStart, regionSize);
                     regionStart = newPa;
                     regionSize = 0;
                 }
 
+                pa = newPa;
                 va += PageSize;
                 regionSize += PageSize;
             }

@@ -57,6 +57,7 @@ namespace Ryujinx.Graphics.Vulkan
 
         internal MemoryAllocator MemoryAllocator { get; private set; }
         internal HostMemoryAllocator HostMemoryAllocator { get; private set; }
+        internal DonatedBufferAllocator DonatedBufferAllocator { get; private set; }
         internal CommandBufferPool CommandBufferPool { get; private set; }
         internal PipelineLayoutCache PipelineLayoutCache { get; private set; }
         internal PipelineCacheManager PipelineCacheManager { get; private set; }
@@ -462,7 +463,7 @@ namespace Ryujinx.Graphics.Vulkan
                 properties.Limits.FramebufferDepthSampleCounts &
                 properties.Limits.FramebufferStencilSampleCounts;
 
-            bool supportsExtendedDynamicState = _physicalDevice.IsDeviceExtensionPresent(ExtExtendedDynamicState.ExtensionName);
+            bool supportsExtendedDynamicState = Environment.GetEnvironmentVariable("MVK_SUPPORTS_EXT_DYN_STATE") != "0" && _physicalDevice.IsDeviceExtensionPresent(ExtExtendedDynamicState.ExtensionName);
 
             Capabilities = new HardwareCapabilities(
                 _physicalDevice.IsDeviceExtensionPresent("VK_EXT_index_type_uint8") && !IsMoltenVk,
@@ -479,7 +480,7 @@ namespace Ryujinx.Graphics.Vulkan
                 _physicalDevice.IsDeviceExtensionPresent("VK_EXT_shader_stencil_export"),
                 features2.Features.ShaderStorageImageMultisample,
                 _physicalDevice.IsDeviceExtensionPresent(ExtConditionalRendering.ExtensionName),
-                OperatingSystem.IsIOS() ? OperatingSystem.IsIOSVersionAtLeast(17) && supportsExtendedDynamicState : supportsExtendedDynamicState,
+                supportsExtendedDynamicState,
                 features2.Features.MultiViewport && !(IsMoltenVk && Vendor == Vendor.Amd), // Workaround for AMD on MoltenVK issue
                 featuresRobustness2.NullDescriptor,
                 supportsPushDescriptors,
@@ -510,6 +511,7 @@ namespace Ryujinx.Graphics.Vulkan
 
             Api.TryGetDeviceExtension(_instance.Instance, _device, out ExtExternalMemoryHost hostMemoryApi);
             HostMemoryAllocator = new HostMemoryAllocator(MemoryAllocator, Api, hostMemoryApi, _device);
+            DonatedBufferAllocator = new DonatedBufferAllocator(Api, _device, _physicalDevice, MemoryAllocator, hostMemoryApi);
 
             CommandBufferPool = new CommandBufferPool(Api, _device, Queue, QueueLock, queueFamilyIndex, IsQualcommProprietary);
 
@@ -560,7 +562,8 @@ namespace Ryujinx.Graphics.Vulkan
                 Api,
                 _physicalDevice,
                 _device,
-                BackgroundCompilationScheduler.PipelineWorkerCount);
+                BackgroundCompilationScheduler.PipelineCacheCount,
+                PipelineCreationLock);
             BackgroundCompilationScheduler = new(PipelineCacheManager);
 
             LoadFeatures(maxQueueCount, queueFamilyIndex);
@@ -739,15 +742,14 @@ namespace Ryujinx.Graphics.Vulkan
                 Format.Bc7Srgb,
                 Format.Bc7Unorm);
 
-            // These are supported on M1 / A17+
-            // Anything below that doesn't support them.
-            // However moltenVK still tracks that the actual formats exist,
-            // so the app crashes with pixelFormat (140) is not a valid MTLPixelFormat.
-            if (!OperatingSystem.IsIOSVersionAtLeast(16, 4))
+
+            if (IsMoltenVk && !MoltenVkMetalInterop.SupportsBcTextureCompression(_physicalDevice.PhysicalDevice))
             {
                 supportsBc123CompressionFormat = false;
                 supportsBc45CompressionFormat = false;
                 supportsBc67CompressionFormat = false;
+
+                Logger.Info?.Print(LogClass.Gpu, "Metal device does not support BC texture compression; using software decoding.");
             }
 
 
@@ -757,7 +759,11 @@ namespace Ryujinx.Graphics.Vulkan
                 Format.Etc2RgbPtaSrgb,
                 Format.Etc2RgbPtaUnorm,
                 Format.Etc2RgbSrgb,
-                Format.Etc2RgbUnorm);
+                Format.Etc2RgbUnorm,
+                Format.EacR11Unorm,
+                Format.EacR11Snorm,
+                Format.EacR11G11Unorm,
+                Format.EacR11G11Snorm);
 
             bool supports5BitComponentFormat = FormatCapabilities.OptimalFormatsSupport(compressedFormatFeatureFlags,
                 Format.R5G6B5Unorm,
@@ -1162,6 +1168,8 @@ namespace Ryujinx.Graphics.Vulkan
             {
                 sampler.Dispose();
             }
+
+            DonatedBufferAllocator.Dispose();
 
             SurfaceApi.DestroySurface(_instance.Instance, _surface, null);
 

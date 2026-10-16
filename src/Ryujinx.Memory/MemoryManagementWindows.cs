@@ -63,6 +63,11 @@ namespace Ryujinx.Memory
             }
         }
 
+        public static bool TryDiscardPages(nint location, nint size)
+        {
+            return WindowsApi.VirtualAlloc(location, size, AllocationType.Reset, MemoryProtection.ReadWrite) != nint.Zero;
+        }
+
         public static void Decommit(nint location, nint size)
         {
             if (!WindowsApi.VirtualFree(location, size, AllocationType.Decommit))

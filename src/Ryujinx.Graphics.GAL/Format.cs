@@ -150,6 +150,10 @@ namespace Ryujinx.Graphics.GAL
         B10G10R10A2Unorm,
         X8UintD24Unorm,
         A8B8G8R8Uint,
+        EacR11Unorm,
+        EacR11Snorm,
+        EacR11G11Unorm,
+        EacR11G11Snorm,
     }
 
     public static class FormatExtensions
@@ -202,6 +206,8 @@ namespace Ryujinx.Graphics.GAL
                     or Format.Bc6HSfloat or Format.Bc6HUfloat => 16,
                 Format.Etc2RgbUnorm or Format.Etc2RgbPtaUnorm or Format.Etc2RgbSrgb or Format.Etc2RgbPtaSrgb => 8,
                 Format.Etc2RgbaUnorm or Format.Etc2RgbaSrgb => 16,
+                Format.EacR11Unorm or Format.EacR11Snorm => 8,
+                Format.EacR11G11Unorm or Format.EacR11G11Snorm => 16,
                 Format.Astc4x4Unorm or Format.Astc5x4Unorm or Format.Astc5x5Unorm or Format.Astc6x5Unorm
                     or Format.Astc6x6Unorm or Format.Astc8x5Unorm or Format.Astc8x6Unorm or Format.Astc8x8Unorm
                     or Format.Astc10x5Unorm or Format.Astc10x6Unorm or Format.Astc10x8Unorm or Format.Astc10x10Unorm

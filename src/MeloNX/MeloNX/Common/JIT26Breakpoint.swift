@@ -22,6 +22,5 @@ func JIT26BreakpointHandler() {
     sa.__sigaction_u.__sa_sigaction = handler
 
     sigaction(SIGTRAP, &sa, nil)
-    sigaction(SIGBUS, &sa, nil)
 }
 

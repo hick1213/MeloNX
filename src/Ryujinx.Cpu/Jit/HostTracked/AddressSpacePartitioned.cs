@@ -18,6 +18,9 @@ namespace Ryujinx.Cpu.Jit.HostTracked
         private readonly Action<ulong, nint, ulong> _updatePtCallback;
         private readonly bool _useProtectionMirrors;
 
+        // Accessed under _partitions. List mutations invalidate the cached index.
+        private int _lastPartitionIndex = -1;
+
         public AddressSpacePartitioned(MemoryTracking tracking, MemoryBlock backingMemory, NativePageTable nativePageTable, bool useProtectionMirrors)
         {
             _backingMemory = backingMemory;
@@ -84,6 +87,7 @@ namespace Ryujinx.Cpu.Jit.HostTracked
 
                     if (partition.IsEmpty())
                     {
+                        _lastPartitionIndex = -1;
                         _partitions.Remove(partition);
                         partition.Dispose();
                     }
@@ -264,6 +268,16 @@ namespace Ryujinx.Cpu.Jit.HostTracked
 
         private int FindPartitionIndexLocked(ulong va)
         {
+            if (_lastPartitionIndex >= 0)
+            {
+                AddressSpacePartition cached = _partitions[_lastPartitionIndex];
+
+                if (va >= cached.Address && va < cached.EndAddress)
+                {
+                    return _lastPartitionIndex;
+                }
+            }
+
             int left = 0;
             int middle;
             int right = _partitions.Count - 1;
@@ -276,6 +290,7 @@ namespace Ryujinx.Cpu.Jit.HostTracked
 
                 if (partition.Address <= va && partition.EndAddress > va)
                 {
+                    _lastPartitionIndex = middle;
                     return middle;
                 }
 
@@ -294,6 +309,8 @@ namespace Ryujinx.Cpu.Jit.HostTracked
 
         private void EnsurePartitionsLocked(ulong va, ulong size)
         {
+            _lastPartitionIndex = -1;
+
             ulong endVa = BitUtils.AlignUp(va + size, PartitionSize);
             va = BitUtils.AlignDown(va, PartitionSize);
 
@@ -394,6 +411,7 @@ namespace Ryujinx.Cpu.Jit.HostTracked
                 }
 
                 _partitions.Clear();
+                _lastPartitionIndex = -1;
                 _asAllocator.Dispose();
             }
         }

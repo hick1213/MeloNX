@@ -14,7 +14,7 @@ class KBController: BaseController {
     }
     
     override init(nativeController: GCController? = nil, virtual: Bool? = nil) {
-        super.init(nativeController: nativeController)
+        super.init(nativeController: nativeController, virtual: true)
         self.orgName = "Keyboard Controller"
         self.virtual = false
     }

@@ -154,6 +154,45 @@ namespace Ryujinx.Memory
         }
 
         /// <summary>
+        /// Attempts to decommit a region of memory, returning false rather than throwing if the
+        /// host refuses to release the pages. The range must be host page aligned; callers are
+        /// responsible for making sure nothing else is still using it.
+        /// </summary>
+        /// <param name="offset">Starting offset of the range to be decommitted</param>
+        /// <param name="size">Size of the range to be decommitted</param>
+        /// <returns>True if the pages were released, false otherwise</returns>
+        public bool TryDecommit(ulong offset, ulong size)
+        {
+            return MemoryManagement.TryDecommit(GetPointerInternal(offset, size), size);
+        }
+
+        /// <summary>
+        /// Drops the physical pages backing a region, without decommitting it or changing its
+        /// protection, so the region stays mapped and usable. On platforms that zero fault in
+        /// (Darwin, Linux) it reads back as zero afterwards; on Windows the previous contents may
+        /// still be visible, so do not rely on this to clear data.
+        /// </summary>
+        /// <param name="offset">Starting offset of the range to discard, host page aligned</param>
+        /// <param name="size">Size of the range to discard, host page aligned</param>
+        /// <returns>True if the pages were released, false otherwise</returns>
+        public bool TryDiscard(ulong offset, ulong size)
+        {
+            return MemoryManagement.TryDiscard(GetPointerInternal(offset, size), size);
+        }
+
+        /// <summary>
+        /// Announces that a region previously passed to <see cref="TryDiscard"/> is about to be
+        /// used again, so the host stops counting it as reclaimable. Does not restore contents.
+        /// </summary>
+        /// <param name="offset">Starting offset of the range, host page aligned</param>
+        /// <param name="size">Size of the range, host page aligned</param>
+        /// <returns>True if the host accepted the hint, false otherwise</returns>
+        public bool TryUndiscard(ulong offset, ulong size)
+        {
+            return MemoryManagement.TryUndiscard(GetPointerInternal(offset, size), size);
+        }
+
+        /// <summary>
         /// Maps a view of memory from another memory block.
         /// </summary>
         /// <param name="srcBlock">Memory block from where the backing memory will be taken</param>

@@ -33,6 +33,7 @@ namespace Ryujinx.Cpu
             }
 
             private readonly List<Range> _freeRanges;
+            private bool _hasDiscardedRanges;
 
             public Block(MemoryBlock memory, ulong size)
             {
@@ -70,6 +71,11 @@ namespace Ryujinx.Cpu
                             InsertFreeRange(endOffset - remainingSize, remainingSize);
                         }
 
+                        if (_hasDiscardedRanges)
+                        {
+                            Reinstate(alignedOffset, size);
+                        }
+
                         return alignedOffset;
                     }
                 }
@@ -80,6 +86,55 @@ namespace Ryujinx.Cpu
             public void Free(ulong offset, ulong size)
             {
                 InsertFreeRangeComingled(offset, size);
+            }
+
+            public ulong Discard(ulong offset, ulong size)
+            {
+                ulong alignment = MemoryBlock.GetPageSize();
+                ulong endOffset = offset + size;
+
+                offset = BitUtils.AlignUp(offset, alignment);
+                endOffset = BitUtils.AlignDown(endOffset, alignment);
+
+                if (endOffset <= offset)
+                {
+                    return 0;
+                }
+
+                ulong alignedSize = endOffset - offset;
+
+                if (alignedSize < MemoryReclaim.PrivateAllocatorMinimumSize)
+                {
+                    return 0;
+                }
+
+                if (Memory == null || !Memory.TryDiscard(offset, alignedSize))
+                {
+                    return 0;
+                }
+
+                _hasDiscardedRanges = true;
+
+                MemoryReclaim.AddPrivateAllocatorBytes(alignedSize);
+
+                return alignedSize;
+            }
+            
+            private void Reinstate(ulong offset, ulong size)
+            {
+                Memory.TryUndiscard(offset, size);
+
+                ulong remaining = size;
+
+                while (remaining != 0)
+                {
+                    int chunkSize = (int)Math.Min(remaining, int.MaxValue);
+
+                    Memory.GetSpan(offset, chunkSize).Clear();
+
+                    offset += (ulong)chunkSize;
+                    remaining -= (ulong)chunkSize;
+                }
             }
 
             private void InsertFreeRange(ulong offset, ulong size)
@@ -183,11 +238,20 @@ namespace Ryujinx.Cpu
         private readonly ulong _blockAlignment;
         private readonly MemoryAllocationFlags _allocationFlags;
 
+        /// <summary>
+        /// Whether blocks from this allocator actually own the memory behind them, and so can hand it back when a range inside them falls out of use.
+        /// </summary>
+        private readonly bool _ownsBackingMemory;
+
         public PrivateMemoryAllocatorImpl(ulong blockAlignment, MemoryAllocationFlags allocationFlags)
         {
             _blocks = [];
             _blockAlignment = blockAlignment;
             _allocationFlags = allocationFlags;
+            _ownsBackingMemory =
+                allocationFlags.HasFlag(MemoryAllocationFlags.Mirrorable) &&
+                !allocationFlags.HasFlag(MemoryAllocationFlags.Reserve) &&
+                !allocationFlags.HasFlag(MemoryAllocationFlags.NoMap);
         }
 
         protected Allocation Allocate(ulong size, ulong alignment, Func<MemoryBlock, ulong, T> createBlock)
@@ -241,6 +305,10 @@ namespace Ryujinx.Cpu
                 }
 
                 block.Destroy();
+            }
+            else if (_ownsBackingMemory && MemoryReclaim.PrivateAllocatorEnabled)
+            {
+                block.Discard(offset, size);
             }
         }
 

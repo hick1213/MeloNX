@@ -394,7 +394,7 @@ namespace Ryujinx.Graphics.Vulkan
 
                 Result result;
 
-                if (cache.Handle != 0 && !gd.PipelineCacheManager.IsWorkerCache(cache))
+                if (gd.PipelineCacheManager.IsMainCache(cache))
                 {
                     lock (gd.PipelineCreationLock)
                     {
@@ -421,6 +421,11 @@ namespace Ryujinx.Graphics.Vulkan
                 }
             }
 
+            if (gd.PipelineCacheManager.IsMainCache(cache))
+            {
+                gd.PipelineCacheManager.NotifyMainPipelineCreated();
+            }
+
             pipeline = new Auto<DisposablePipeline>(new DisposablePipeline(gd.Api, device, pipelineHandle));
 
             return program.AddComputePipeline(ref SpecializationData, pipeline);
@@ -434,7 +439,8 @@ namespace Ryujinx.Graphics.Vulkan
             RenderPass renderPass,
             bool throwOnError = false,
             bool allowSynchronousCompile = true,
-            bool cachePipelineFailure = true)
+            bool cachePipelineFailure = true,
+            bool failOnCompileRequired = false)
         {
             if (program.TryGetGraphicsPipeline(ref Internal, out Auto<DisposablePipeline> pipeline))
             {
@@ -680,6 +686,11 @@ namespace Ryujinx.Graphics.Vulkan
                     }
                 }
 
+                if (failOnCompileRequired)
+                {
+                    flags |= PipelineCreateFlags.CreateFailOnPipelineCompileRequiredBitExt;
+                }
+
                 GraphicsPipelineCreateInfo pipelineCreateInfo = new()
                 {
                     SType = StructureType.GraphicsPipelineCreateInfo,
@@ -701,11 +712,32 @@ namespace Ryujinx.Graphics.Vulkan
 
                 Result result;
 
-                if (cache.Handle != 0 && !gd.PipelineCacheManager.IsWorkerCache(cache))
+                if (gd.PipelineCacheManager.IsMainCache(cache))
                 {
-                    lock (gd.PipelineCreationLock)
+                    bool lockTaken = false;
+
+                    try
                     {
-                        result = gd.Api.CreateGraphicsPipelines(device, cache, 1, &pipelineCreateInfo, null, &pipelineHandle);
+                        if (failOnCompileRequired)
+                        {
+                            lockTaken = gd.PipelineCreationLock.TryEnter();
+                        }
+                        else
+                        {
+                            gd.PipelineCreationLock.Enter();
+                            lockTaken = true;
+                        }
+
+                        result = lockTaken
+                            ? gd.Api.CreateGraphicsPipelines(device, cache, 1, &pipelineCreateInfo, null, &pipelineHandle)
+                            : Result.PipelineCompileRequired;
+                    }
+                    finally
+                    {
+                        if (lockTaken)
+                        {
+                            gd.PipelineCreationLock.Exit();
+                        }
                     }
                 }
                 else
@@ -713,7 +745,19 @@ namespace Ryujinx.Graphics.Vulkan
                     result = gd.Api.CreateGraphicsPipelines(device, cache, 1, &pipelineCreateInfo, null, &pipelineHandle);
                 }
 
-                if (throwOnError)
+                while (blendEnables != 0)
+                {
+                    int i = BitOperations.TrailingZeroCount(blendEnables);
+
+                    colorBlendAttachmentStateSpan[i].BlendEnable = true;
+                    blendEnables &= ~(1u << i);
+                }
+
+                if (result == Result.PipelineCompileRequired)
+                {
+                    return null;
+                }
+                else if (throwOnError)
                 {
                     result.ThrowOnError();
                 }
@@ -726,15 +770,11 @@ namespace Ryujinx.Graphics.Vulkan
 
                     return null;
                 }
+            }
 
-                // Restore previous blend enable values if we changed it.
-                while (blendEnables != 0)
-                {
-                    int i = BitOperations.TrailingZeroCount(blendEnables);
-
-                    colorBlendAttachmentStateSpan[i].BlendEnable = true;
-                    blendEnables &= ~(1u << i);
-                }
+            if (gd.PipelineCacheManager.IsMainCache(cache))
+            {
+                gd.PipelineCacheManager.NotifyMainPipelineCreated();
             }
 
             pipeline = new Auto<DisposablePipeline>(new DisposablePipeline(gd.Api, device, pipelineHandle));

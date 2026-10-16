@@ -74,6 +74,14 @@ struct GameCardView: View {
         }
     }
     
+    private var focusStyle: MenuFocusStyle {
+        switch cardType {
+        case .compactCardSmall: return .smallCard
+        case .compactCardNoBackground: return MenuFocusStyle()
+        default: return .card
+        }
+    }
+
     var body: some View {
         Button {
             ryujinxController.startGame(game)
@@ -104,6 +112,7 @@ struct GameCardView: View {
                 normalGrid
             }
         }
+        .menuFocusable(game.id, style: focusStyle)
     }
     
     

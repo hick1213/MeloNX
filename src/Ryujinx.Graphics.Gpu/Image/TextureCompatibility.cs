@@ -77,33 +77,62 @@ namespace Ryujinx.Graphics.Gpu.Image
             {
                 if (info.FormatInfo.Format.IsAstcUnorm)
                 {
-                    return GraphicsConfig.EnableTextureRecompression
-                        ? new FormatInfo(Format.Bc7Unorm, 4, 4, 16, 4)
-                        : new FormatInfo(Format.R8G8B8A8Unorm, 1, 1, 4, 4);
+                    return GetDecompressedRgba8Format(info.Target, caps, false);
                 }
-                
+
                 if (info.FormatInfo.Format.IsAstcSrgb)
                 {
-                    return GraphicsConfig.EnableTextureRecompression
-                        ? new FormatInfo(Format.Bc7Srgb, 4, 4, 16, 4)
-                        : new FormatInfo(Format.R8G8B8A8Srgb, 1, 1, 4, 4);
+                    return GetDecompressedRgba8Format(info.Target, caps, true);
                 }
             }
 
             if (!HostSupportsBcFormat(info.FormatInfo.Format, info.Target, caps))
             {
+                // Formats that can be transcoded block by block to a ETC2/EAC format of the same size.
+                if (CanTranscodeBcToEtc2(info.Target, caps))
+                {
+                    switch (info.FormatInfo.Format)
+                    {
+                        case Format.Bc1RgbaSrgb:
+                            return new FormatInfo(Format.Etc2RgbPtaSrgb, 4, 4, 8, 4);
+                        case Format.Bc1RgbaUnorm:
+                            return new FormatInfo(Format.Etc2RgbPtaUnorm, 4, 4, 8, 4);
+                        case Format.Bc2Srgb:
+                        case Format.Bc3Srgb:
+                        case Format.Bc7Srgb:
+                            return new FormatInfo(Format.Etc2RgbaSrgb, 4, 4, 16, 4);
+                        case Format.Bc2Unorm:
+                        case Format.Bc3Unorm:
+                        case Format.Bc7Unorm:
+                            return new FormatInfo(Format.Etc2RgbaUnorm, 4, 4, 16, 4);
+                        case Format.Bc4Unorm:
+                            return new FormatInfo(Format.EacR11Unorm, 4, 4, 8, 1);
+                        case Format.Bc4Snorm:
+                            return new FormatInfo(Format.EacR11Snorm, 4, 4, 8, 1);
+                        case Format.Bc5Unorm:
+                            return new FormatInfo(Format.EacR11G11Unorm, 4, 4, 16, 2);
+                        case Format.Bc5Snorm:
+                            return new FormatInfo(Format.EacR11G11Snorm, 4, 4, 16, 2);
+                    }
+                }
+                
+                if (info.FormatInfo.Format == Format.Bc6HUfloat && IsRecompressionEnabled)
+                {
+                    return new FormatInfo(Format.R11G11B10Float, 1, 1, 4, 3);
+                }
+
                 switch (info.FormatInfo.Format)
                 {
                     case Format.Bc1RgbaSrgb:
                     case Format.Bc2Srgb:
                     case Format.Bc3Srgb:
                     case Format.Bc7Srgb:
-                        return new FormatInfo(Format.R8G8B8A8Srgb, 1, 1, 4, 4);
+                        return GetDecompressedRgba8Format(info.Target, caps, true);
                     case Format.Bc1RgbaUnorm:
                     case Format.Bc2Unorm:
                     case Format.Bc3Unorm:
                     case Format.Bc7Unorm:
-                        return new FormatInfo(Format.R8G8B8A8Unorm, 1, 1, 4, 4);
+                        return GetDecompressedRgba8Format(info.Target, caps, false);
                     case Format.Bc4Unorm:
                         return new FormatInfo(Format.R8Unorm, 1, 1, 1, 1);
                     case Format.Bc4Snorm:
@@ -158,6 +187,91 @@ namespace Ryujinx.Graphics.Gpu.Image
             }
 
             return info.FormatInfo;
+        }
+
+        private static bool CanTranscodeBcToEtc2(Target target, Capabilities caps)
+        {
+            return caps.SupportsEtc2Compression && SupportsEtc2Target(target);
+        }
+
+        private static bool SupportsEtc2Target(Target target)
+        {
+            return target != Target.Texture3D;
+        }
+
+        private static bool IsRecompressionEnabled => GraphicsConfig.EnableTextureRecompression;
+
+        public static RecompressionFormat GetRecompressionFormat(Target target, Capabilities caps)
+        {
+            if (!IsRecompressionEnabled)
+            {
+                return RecompressionFormat.None;
+            }
+
+            if (target == Target.Texture3D && !caps.Supports3DTextureCompression)
+            {
+                return RecompressionFormat.None;
+            }
+
+            if (caps.SupportsBc67Compression)
+            {
+                return RecompressionFormat.Bc7;
+            }
+
+            if (caps.SupportsEtc2Compression && SupportsEtc2Target(target))
+            {
+                return RecompressionFormat.Etc2Rgba;
+            }
+
+            if (caps.SupportsAstcCompression)
+            {
+                return RecompressionFormat.Astc4x4;
+            }
+
+            return RecompressionFormat.None;
+        }
+
+
+        private static FormatInfo GetDecompressedRgba8Format(Target target, Capabilities caps, bool srgb)
+        {
+            return GetRecompressionFormat(target, caps) switch
+            {
+                RecompressionFormat.Bc7 => new FormatInfo(srgb ? Format.Bc7Srgb : Format.Bc7Unorm, 4, 4, 16, 4),
+                RecompressionFormat.Etc2Rgba => new FormatInfo(srgb ? Format.Etc2RgbaSrgb : Format.Etc2RgbaUnorm, 4, 4, 16, 4),
+                RecompressionFormat.Astc4x4 => new FormatInfo(srgb ? Format.Astc4x4Srgb : Format.Astc4x4Unorm, 4, 4, 16, 4),
+                _ => new FormatInfo(srgb ? Format.R8G8B8A8Srgb : Format.R8G8B8A8Unorm, 1, 1, 4, 4),
+            };
+        }
+
+        public static bool IsConversionSlow(TextureInfo info, Capabilities caps)
+        {
+            if (info.FormatInfo.Format.IsAstc && !caps.SupportsAstcCompression)
+            {
+                return true;
+            }
+
+            switch (info.FormatInfo.Format)
+            {
+                case Format.Bc1RgbaSrgb:
+                case Format.Bc1RgbaUnorm:
+                case Format.Bc2Srgb:
+                case Format.Bc2Unorm:
+                case Format.Bc3Srgb:
+                case Format.Bc3Unorm:
+                case Format.Bc7Srgb:
+                case Format.Bc7Unorm:
+                    return !HostSupportsBcFormat(info.FormatInfo.Format, info.Target, caps) &&
+                        (CanTranscodeBcToEtc2(info.Target, caps) ||
+                         GetRecompressionFormat(info.Target, caps) != RecompressionFormat.None);
+                case Format.Bc4Unorm:
+                case Format.Bc4Snorm:
+                case Format.Bc5Unorm:
+                case Format.Bc5Snorm:
+                    return !HostSupportsBcFormat(info.FormatInfo.Format, info.Target, caps) &&
+                        CanTranscodeBcToEtc2(info.Target, caps);
+            }
+
+            return false;
         }
 
         /// <summary>
@@ -672,7 +786,8 @@ namespace Ryujinx.Graphics.Gpu.Image
 
             if (IsFormatHostIncompatible(lhs, caps) || IsFormatHostIncompatible(rhs, caps))
             {
-                return lhsFormat.Format == rhsFormat.Format ? TextureViewCompatibility.Full : TextureViewCompatibility.Incompatible;
+                return lhsFormat.Format == rhsFormat.Format &&
+                    ToHostCompatibleFormat(lhs, caps).Format == ToHostCompatibleFormat(rhs, caps).Format ? TextureViewCompatibility.Full : TextureViewCompatibility.Incompatible;
             }
 
             if (lhsFormat.IsCompressed && rhsFormat.IsCompressed)

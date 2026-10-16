@@ -204,12 +204,12 @@ namespace Ryujinx.Graphics.Texture.Astc
             }
         }
 
-        private static ReadOnlySpan<byte> GetTritEncoding(int index)
+        internal static ReadOnlySpan<byte> GetTritEncoding(int index)
         {
             return TritEncodings.Slice(index * 5, 5);
         }
 
-        private static ReadOnlySpan<byte> GetQuintEncoding(int index)
+        internal static ReadOnlySpan<byte> GetQuintEncoding(int index)
         {
             return QuintEncodings.Slice(index * 3, 3);
         }

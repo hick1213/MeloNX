@@ -779,7 +779,7 @@ namespace Ryujinx.HLE.HOS.Services.Fs
         // OpenDataStorageByCurrentProcess() -> object<nn::fssrv::sf::IStorage> dataStorage
         public ResultCode OpenDataStorageByCurrentProcess(ServiceCtx context)
         {
-            LibHac.Fs.IStorage storage = context.Device.FileSystem.GetRomFs(_pid).AsStorage(true);
+            LibHac.Fs.IStorage storage = context.Device.FileSystem.GetRomFsStorage(_pid);
             using SharedRef<LibHac.Fs.IStorage> sharedStorage = new(storage);
             using SharedRef<IStorage> sfStorage = new(new StorageInterfaceAdapter(ref sharedStorage.Ref));
 
@@ -870,7 +870,7 @@ namespace Ryujinx.HLE.HOS.Services.Fs
         // OpenPatchDataStorageByCurrentProcess() -> object<nn::fssrv::sf::IStorage>
         public ResultCode OpenPatchDataStorageByCurrentProcess(ServiceCtx context)
         {
-            LibHac.Fs.IStorage storage = context.Device.FileSystem.GetRomFs(_pid).AsStorage(true);
+            LibHac.Fs.IStorage storage = context.Device.FileSystem.GetRomFsStorage(_pid);
             using SharedRef<LibHac.Fs.IStorage> sharedStorage = new(storage);
             using SharedRef<IStorage> sfStorage = new(new StorageInterfaceAdapter(ref sharedStorage.Ref));
 
@@ -890,7 +890,7 @@ namespace Ryujinx.HLE.HOS.Services.Fs
                 throw new NotImplementedException($"Accessing storage from other programs is not supported (program index = {programIndex}).");
             }
 
-            LibHac.Fs.IStorage storage = context.Device.FileSystem.GetRomFs(_pid).AsStorage(true);
+            LibHac.Fs.IStorage storage = context.Device.FileSystem.GetRomFsStorage(_pid);
             using SharedRef<LibHac.Fs.IStorage> sharedStorage = new(storage);
             using SharedRef<IStorage> sfStorage = new(new StorageInterfaceAdapter(ref sharedStorage.Ref));
 

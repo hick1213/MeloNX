@@ -213,7 +213,22 @@ namespace Ryujinx.Graphics.Vulkan
 
         public void WaitForCompile()
         {
-            CompileTask.Wait();
+            try
+            {
+                CompileTask.Wait();
+            }
+            catch (AggregateException)
+            {
+                if (CompileStatus == ProgramLinkStatus.Incomplete)
+                {
+                    CompileStatus = ProgramLinkStatus.Failure;
+                }
+            }
+        }
+
+        public void PromoteCompilation()
+        {
+            _gd?.BackgroundCompilationScheduler.PromoteShaderCompile(CompileTask);
         }
 
         public unsafe void Dispose()

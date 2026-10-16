@@ -36,7 +36,7 @@ namespace Ryujinx.HLE.FileSystem
         public SdmmcApi SdCard { get; private set; }
         public ModLoader ModLoader { get; private set; }
 
-        private readonly ConcurrentDictionary<ulong, Stream> _romFsByPid;
+        private readonly ConcurrentDictionary<ulong, LibHac.Fs.IStorage> _romFsByPid;
 
         private static bool _isInitialized = false;
 
@@ -56,34 +56,38 @@ namespace Ryujinx.HLE.FileSystem
         {
             ReloadKeySet();
             ModLoader = new ModLoader(); // Should only be created once
-            _romFsByPid = new ConcurrentDictionary<ulong, Stream>();
+            _romFsByPid = new ConcurrentDictionary<ulong, LibHac.Fs.IStorage>();
         }
 
         public void LoadRomFs(ulong pid, string fileName)
         {
-            FileStream romfsStream = new(fileName, FileMode.Open, FileAccess.Read);
+            SetRomFs(pid, new LocalStorage(fileName, FileAccess.Read));
+        }
 
-            _romFsByPid.AddOrUpdate(pid, romfsStream, (pid, oldStream) =>
+        /// <summary>
+        /// Sets the RomFS storage for a process. Ownership of <paramref name="romFsStorage"/> is taken.
+        /// </summary>
+        public void SetRomFs(ulong pid, LibHac.Fs.IStorage romFsStorage)
+        {
+            _romFsByPid.AddOrUpdate(pid, romFsStorage, (_, oldStorage) =>
             {
-                oldStream.Close();
+                oldStorage.Dispose();
 
-                return romfsStream;
+                return romFsStorage;
             });
         }
 
-        public void SetRomFs(ulong pid, Stream romfsStream)
+        /// <summary>
+        /// Returns a non-owning view of a process' RomFS storage, safe for the caller to dispose
+        /// without affecting the shared storage or other sessions.
+        /// </summary>
+        public LibHac.Fs.IStorage GetRomFsStorage(ulong pid)
         {
-            _romFsByPid.AddOrUpdate(pid, romfsStream, (pid, oldStream) =>
-            {
-                oldStream.Close();
+            LibHac.Fs.IStorage storage = _romFsByPid[pid];
 
-                return romfsStream;
-            });
-        }
+            storage.GetSize(out long size).ThrowIfFailure();
 
-        public Stream GetRomFs(ulong pid)
-        {
-            return _romFsByPid[pid];
+            return new SubStorage(storage, 0, size);
         }
 
         public static string GetFullPath(string basePath, string fileName)
@@ -665,9 +669,9 @@ namespace Ryujinx.HLE.FileSystem
         {
             if (disposing)
             {
-                foreach (Stream stream in _romFsByPid.Values)
+                foreach (LibHac.Fs.IStorage storage in _romFsByPid.Values)
                 {
-                    stream.Close();
+                    storage.Dispose();
                 }
 
                 _romFsByPid.Clear();

@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -21,6 +21,10 @@
   <PropertyGroup Condition="'$(MeloNXImportDiagnostics)' == 'true'">
     <DefineConstants>$(DefineConstants);MELONX_IMPORT_DIAGNOSTICS</DefineConstants>
   </PropertyGroup>
+
+  <ItemGroup>
+    <RuntimeHostConfigurationOption Include="System.GC.ConserveMemory" Value="9" />
+  </ItemGroup>
 
   <ItemGroup>
   <TrimmerRootDescriptor Include="TrimmerRoots.xml" />

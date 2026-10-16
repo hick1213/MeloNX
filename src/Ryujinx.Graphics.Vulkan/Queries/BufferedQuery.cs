@@ -2,6 +2,7 @@ using Ryujinx.Common.Logging;
 using Ryujinx.Graphics.GAL;
 using Silk.NET.Vulkan;
 using System;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using Buffer = Silk.NET.Vulkan.Buffer;
@@ -147,15 +148,20 @@ namespace Ryujinx.Graphics.Vulkan.Queries
 
             if (wakeSignal == null)
             {
-                int iterations = 0;
-                while (WaitingForValue(data) && iterations++ < MaxQueryRetries)
-                {
-                    data = Marshal.ReadInt64(_bufferMap);
-                }
+                // Bound by time rather than iterations: a few thousand reads only cover a few microseconds,
+                // which slower GPUs (eg. A14) regularly miss, returning the default value as a result.
+                long startTicks = Stopwatch.GetTimestamp();
+                SpinWait spinWait = new();
 
-                if (iterations >= MaxQueryRetries)
+                while (WaitingForValue(data = Marshal.ReadInt64(_bufferMap)))
                 {
-                    Logger.Error?.Print(LogClass.Gpu, $"Error: Query result {_type} timed out. Took more than {MaxQueryRetries} tries.");
+                    if (Stopwatch.GetElapsedTime(startTicks).TotalMilliseconds >= MaxQueryRetries)
+                    {
+                        Logger.Error?.Print(LogClass.Gpu, $"Error: Query result {_type} timed out. Took more than {MaxQueryRetries}ms.");
+                        return 0;
+                    }
+
+                    spinWait.SpinOnce(-1);
                 }
             }
             else

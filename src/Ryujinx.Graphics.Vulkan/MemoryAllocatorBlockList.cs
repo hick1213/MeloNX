@@ -16,8 +16,9 @@ namespace Ryujinx.Graphics.Vulkan
             public DeviceMemory Memory { get; private set; }
             public nint HostPointer { get; private set; }
             public ulong Size { get; }
+            public bool Dedicated { get; }
             public bool Mapped => HostPointer != nint.Zero;
-
+            private readonly bool _importedHostPointer;
             private readonly struct Range : IComparable<Range>
             {
                 public ulong Offset { get; }
@@ -37,11 +38,20 @@ namespace Ryujinx.Graphics.Vulkan
 
             private readonly List<Range> _freeRanges;
 
-            public Block(DeviceMemory memory, nint hostPointer, ulong size)
+            /// <summary>
+            /// Guards <see cref="_freeRanges"/>. Held only for the range bookkeeping of a single
+            /// block, so allocations that land on different blocks do not contend, and no driver
+            /// call is ever made while it is held.
+            /// </summary>
+            private readonly Lock _rangeLock = new();
+
+            public Block(DeviceMemory memory, nint hostPointer, ulong size, bool dedicated, bool importedHostPointer = false)
             {
                 Memory = memory;
                 HostPointer = hostPointer;
                 Size = size;
+                Dedicated = dedicated;
+                _importedHostPointer = importedHostPointer;
                 _freeRanges =
                 [
                     new(0, size)
@@ -50,40 +60,46 @@ namespace Ryujinx.Graphics.Vulkan
 
             public ulong Allocate(ulong size, ulong alignment)
             {
-                for (int i = 0; i < _freeRanges.Count; i++)
+                lock (_rangeLock)
                 {
-                    Range range = _freeRanges[i];
-
-                    ulong alignedOffset = BitUtils.AlignUp(range.Offset, alignment);
-                    ulong sizeDelta = alignedOffset - range.Offset;
-                    ulong usableSize = range.Size - sizeDelta;
-
-                    if (sizeDelta < range.Size && usableSize >= size)
+                    for (int i = 0; i < _freeRanges.Count; i++)
                     {
-                        _freeRanges.RemoveAt(i);
+                        Range range = _freeRanges[i];
 
-                        if (sizeDelta != 0)
+                        ulong alignedOffset = BitUtils.AlignUp(range.Offset, alignment);
+                        ulong sizeDelta = alignedOffset - range.Offset;
+                        ulong usableSize = range.Size - sizeDelta;
+
+                        if (sizeDelta < range.Size && usableSize >= size)
                         {
-                            InsertFreeRange(range.Offset, sizeDelta);
-                        }
+                            _freeRanges.RemoveAt(i);
 
-                        ulong endOffset = range.Offset + range.Size;
-                        ulong remainingSize = endOffset - (alignedOffset + size);
-                        if (remainingSize != 0)
-                        {
-                            InsertFreeRange(endOffset - remainingSize, remainingSize);
-                        }
+                            if (sizeDelta != 0)
+                            {
+                                InsertFreeRange(range.Offset, sizeDelta);
+                            }
 
-                        return alignedOffset;
+                            ulong endOffset = range.Offset + range.Size;
+                            ulong remainingSize = endOffset - (alignedOffset + size);
+                            if (remainingSize != 0)
+                            {
+                                InsertFreeRange(endOffset - remainingSize, remainingSize);
+                            }
+
+                            return alignedOffset;
+                        }
                     }
-                }
 
-                return InvalidOffset;
+                    return InvalidOffset;
+                }
             }
 
             public void Free(ulong offset, ulong size)
             {
-                InsertFreeRangeComingled(offset, size);
+                lock (_rangeLock)
+                {
+                    InsertFreeRangeComingled(offset, size);
+                }
             }
 
             private void InsertFreeRange(ulong offset, ulong size)
@@ -127,13 +143,16 @@ namespace Ryujinx.Graphics.Vulkan
 
             public bool IsTotallyFree()
             {
-                if (_freeRanges.Count == 1 && _freeRanges[0].Size == Size)
+                lock (_rangeLock)
                 {
-                    Debug.Assert(_freeRanges[0].Offset == 0);
-                    return true;
-                }
+                    if (_freeRanges.Count == 1 && _freeRanges[0].Size == Size)
+                    {
+                        Debug.Assert(_freeRanges[0].Offset == 0);
+                        return true;
+                    }
 
-                return false;
+                    return false;
+                }
             }
 
             public int CompareTo(Block other)
@@ -143,7 +162,7 @@ namespace Ryujinx.Graphics.Vulkan
 
             public unsafe void Destroy(Vk api, Device device)
             {
-                if (Mapped)
+                if (Mapped && !_importedHostPointer)
                 {
                     api.UnmapMemory(device, Memory);
                     HostPointer = nint.Zero;
@@ -165,19 +184,27 @@ namespace Ryujinx.Graphics.Vulkan
         public int MemoryTypeIndex { get; }
         public bool ForBuffer { get; }
 
-        private readonly int _blockAlignment;
+        private readonly int _poolBlockSize;
+        private readonly bool _fixedCapacity;
 
         private readonly ReaderWriterLockSlim _lock;
 
-        public MemoryAllocatorBlockList(Vk api, Device device, int memoryTypeIndex, int blockAlignment, bool forBuffer)
+        public MemoryAllocatorBlockList(Vk api, Device device, int memoryTypeIndex, int poolBlockSize, bool forBuffer)
         {
             _blocks = [];
             _api = api;
             _device = device;
             MemoryTypeIndex = memoryTypeIndex;
             ForBuffer = forBuffer;
-            _blockAlignment = blockAlignment;
+            _poolBlockSize = poolBlockSize;
             _lock = new(LockRecursionPolicy.NoRecursion);
+        }
+
+        public MemoryAllocatorBlockList(Vk api, Device device, int memoryTypeIndex, Block importedBlock)
+            : this(api, device, memoryTypeIndex, 0, true)
+        {
+            _fixedCapacity = true;
+            _blocks.Add(importedBlock);
         }
 
         public unsafe MemoryAllocation Allocate(ulong size, ulong alignment, bool map)
@@ -188,35 +215,48 @@ namespace Ryujinx.Graphics.Vulkan
                 throw new ArgumentOutOfRangeException(nameof(alignment), $"Invalid alignment 0x{alignment:X}.");
             }
 
-            _lock.EnterReadLock();
+            bool dedicated = !_fixedCapacity && size >= (ulong)_poolBlockSize / 2;
 
-            try
+
+            if (!dedicated)
             {
-                for (int i = 0; i < _blocks.Count; i++)
-                {
-                    Block block = _blocks[i];
+                _lock.EnterReadLock();
 
-                    if (block.Mapped == map && block.Size >= size)
+                try
+                {
+                    for (int i = 0; i < _blocks.Count; i++)
                     {
-                        ulong offset = block.Allocate(size, alignment);
-                        if (offset != InvalidOffset)
+                        Block block = _blocks[i];
+
+                        if (!block.Dedicated && block.Mapped == map && block.Size >= size)
                         {
-                            return new MemoryAllocation(this, block, block.Memory, GetHostPointer(block, offset), offset, size);
+                            ulong offset = block.Allocate(size, alignment);
+                            if (offset != InvalidOffset)
+                            {
+                                return new MemoryAllocation(this, block, block.Memory, GetHostPointer(block, offset), offset, size);
+                            }
                         }
                     }
                 }
-            }
-            finally
-            {
-                _lock.ExitReadLock();
+                finally
+                {
+                    _lock.ExitReadLock();
+                }
             }
 
-            ulong blockAlignedSize = BitUtils.AlignUp(size, (ulong)_blockAlignment);
+            // Imported donor memory is a bounded arena. Exhaustion must fall back to the
+            // normal allocator, never silently grow this pool using local memory.
+            if (_fixedCapacity)
+            {
+                return default;
+            }
+
+            ulong blockSize = dedicated ? size : (ulong)_poolBlockSize;
 
             MemoryAllocateInfo memoryAllocateInfo = new()
             {
                 SType = StructureType.MemoryAllocateInfo,
-                AllocationSize = blockAlignedSize,
+                AllocationSize = blockSize,
                 MemoryTypeIndex = (uint)MemoryTypeIndex,
             };
 
@@ -227,16 +267,27 @@ namespace Ryujinx.Graphics.Vulkan
             if (map)
             {
                 void* pointer = null;
-                _api.MapMemory(_device, deviceMemory, 0, blockAlignedSize, 0, ref pointer).ThrowOnError();
+                _api.MapMemory(_device, deviceMemory, 0, blockSize, 0, ref pointer).ThrowOnError();
                 hostPointer = (nint)pointer;
             }
 
-            Block newBlock = new(deviceMemory, hostPointer, blockAlignedSize);
+            Block newBlock = new(deviceMemory, hostPointer, blockSize, dedicated);
 
-            InsertBlock(newBlock);
-
+            // Claim our range before publishing the block, so a concurrent allocation cannot take
+            // the space this call already committed to.
             ulong newBlockOffset = newBlock.Allocate(size, alignment);
             Debug.Assert(newBlockOffset != InvalidOffset);
+
+            _lock.EnterWriteLock();
+
+            try
+            {
+                InsertBlock(newBlock);
+            }
+            finally
+            {
+                _lock.ExitWriteLock();
+            }
 
             return new MemoryAllocation(this, newBlock, deviceMemory, GetHostPointer(newBlock, newBlockOffset), newBlockOffset, size);
         }
@@ -255,48 +306,52 @@ namespace Ryujinx.Graphics.Vulkan
         {
             block.Free(offset, size);
 
-            if (block.IsTotallyFree())
+            if (_fixedCapacity || !block.IsTotallyFree())
             {
-                _lock.EnterWriteLock();
+                return;
+            }
 
-                try
+            bool destroy = false;
+
+            _lock.EnterWriteLock();
+
+            try
+            {
+                // Re-check while holding the list lock. The check above raced with allocations, and
+                // the write lock is what guarantees nobody can find this block once it is removed.
+                if (block.IsTotallyFree())
                 {
                     for (int i = 0; i < _blocks.Count; i++)
                     {
                         if (_blocks[i] == block)
                         {
                             _blocks.RemoveAt(i);
+                            destroy = true;
                             break;
                         }
                     }
                 }
-                finally
-                {
-                    _lock.ExitWriteLock();
-                }
+            }
+            finally
+            {
+                _lock.ExitWriteLock();
+            }
 
+            if (destroy)
+            {
                 block.Destroy(_api, _device);
             }
         }
 
         private void InsertBlock(Block block)
         {
-            _lock.EnterWriteLock();
-
-            try
+            int index = _blocks.BinarySearch(block);
+            if (index < 0)
             {
-                int index = _blocks.BinarySearch(block);
-                if (index < 0)
-                {
-                    index = ~index;
-                }
+                index = ~index;
+            }
 
-                _blocks.Insert(index, block);
-            }
-            finally
-            {
-                _lock.ExitWriteLock();
-            }
+            _blocks.Insert(index, block);
         }
 
         public void Dispose()

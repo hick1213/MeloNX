@@ -666,11 +666,12 @@ namespace Ryujinx.Graphics.Gpu.Image
         {
             ReadOnlySpan<byte> data = _physicalMemory.GetSpan(Range);
 
-            // If the host does not support ASTC compression, we need to do the decompression.
-            // The decompression is slow, so we want to avoid it as much as possible.
+            // If the host does not support the compressed format, we need to do the decompression,
+            // and possibly a re-compression to a format the host does support on top of that.
+            // That is slow, so we want to avoid it as much as possible.
             // This does a byte-by-byte check and skips the update if the data is equal in this case.
-            // This improves the speed on applications that overwrites ASTC data without changing anything.
-            if (Info.FormatInfo.Format.IsAstc && !_context.Capabilities.SupportsAstcCompression)
+            // This improves the speed on applications that overwrites the data without changing anything.
+            if (TextureCompatibility.IsConversionSlow(Info, _context.Capabilities))
             {
                 if (_updateCount < ByteComparisonSwitchThreshold)
                 {
@@ -760,6 +761,40 @@ namespace Ryujinx.Graphics.Gpu.Image
         }
 
         /// <summary>
+        /// Re-compresses texture data that was decompressed on the CPU, if the host GPU supports a compressed format that can hold it and re-compression is enabled.
+        /// </summary>
+        /// <param name="decoded">Decompressed RGBA8 texture data. Always disposed by this method</param>
+        /// <param name="width">Texture width</param>
+        /// <param name="height">Texture height</param>
+        /// <param name="sliceDepth">Texture depth of the data being converted</param>
+        /// <param name="levels">Mipmap level count</param>
+        /// <param name="layers">Texture layer count</param>
+        /// <returns>The re-compressed data, or <paramref name="decoded"/> if it was left uncompressed</returns>
+        private MemoryOwner<byte> Recompress(MemoryOwner<byte> decoded, int width, int height, int sliceDepth, int levels, int layers)
+        {
+            switch (TextureCompatibility.GetRecompressionFormat(Target, _context.Capabilities))
+            {
+                case RecompressionFormat.Bc7:
+                    using (decoded)
+                    {
+                        return BCnEncoder.EncodeBC7(decoded.Memory, width, height, sliceDepth, levels, layers);
+                    }
+                case RecompressionFormat.Etc2Rgba:
+                    using (decoded)
+                    {
+                        return ETC2Encoder.EncodeRgba(decoded.Memory, width, height, sliceDepth, levels, layers);
+                    }
+                case RecompressionFormat.Astc4x4:
+                    using (decoded)
+                    {
+                        return AstcEncoder.Encode4x4(decoded.Memory, width, height, sliceDepth, levels, layers);
+                    }
+                default:
+                    return decoded;
+            }
+        }
+
+        /// <summary>
         /// Converts texture data to a format and layout that is supported by the host GPU.
         /// </summary>
         /// <param name="data">Data to be converted</param>
@@ -839,15 +874,7 @@ namespace Ryujinx.Graphics.Gpu.Image
                         Logger.Debug?.Print(LogClass.Gpu, $"Invalid ASTC texture at 0x{Info.GpuAddress:X} ({texInfo}).");
                     }
 
-                    if (GraphicsConfig.EnableTextureRecompression)
-                    {
-                        using (decoded)
-                        {
-                            return BCnEncoder.EncodeBC7(decoded.Memory, width, height, sliceDepth, levels, layers);
-                        }
-                    }
-
-                    return decoded;
+                    return Recompress(decoded, width, height, sliceDepth, levels, layers);
                 }
             }
             else if (!_context.Capabilities.SupportsEtc2Compression && Format.IsEtc2)
@@ -876,49 +903,99 @@ namespace Ryujinx.Graphics.Gpu.Image
             }
             else if (!TextureCompatibility.HostSupportsBcFormat(Format, Target, _context.Capabilities))
             {
+                Format hostFormat = TextureCompatibility.ToHostCompatibleFormat(Info, _context.Capabilities).Format;
+
                 switch (Format)
                 {
                     case Format.Bc1RgbaSrgb:
                     case Format.Bc1RgbaUnorm:
                         using (result)
                         {
-                            return BCnDecoder.DecodeBC1(result.Span, width, height, sliceDepth, levels, layers);
+                            if (hostFormat is Format.Etc2RgbPtaSrgb or Format.Etc2RgbPtaUnorm)
+                            {
+                                return ETC2Transcoder.TranscodeBC1ToEtc2Pta(result.Memory);
+                            }
+
+                            MemoryOwner<byte> decodedBc1 = BCnDecoder.DecodeBC1(result.Span, width, height, sliceDepth, levels, layers);
+
+                            return Recompress(decodedBc1, width, height, sliceDepth, levels, layers);
                         }
                     case Format.Bc2Srgb:
                     case Format.Bc2Unorm:
                         using (result)
                         {
-                            return BCnDecoder.DecodeBC2(result.Span, width, height, sliceDepth, levels, layers);
+                            if (hostFormat is Format.Etc2RgbaSrgb or Format.Etc2RgbaUnorm)
+                            {
+                                return ETC2Transcoder.TranscodeBC2ToEtc2Rgba(result.Memory, width, height, sliceDepth, levels, layers);
+                            }
+
+                            MemoryOwner<byte> decodedBc2 = BCnDecoder.DecodeBC2(result.Span, width, height, sliceDepth, levels, layers);
+
+                            return Recompress(decodedBc2, width, height, sliceDepth, levels, layers);
                         }
                     case Format.Bc3Srgb:
                     case Format.Bc3Unorm:
                         using (result)
                         {
-                            return BCnDecoder.DecodeBC3(result.Span, width, height, sliceDepth, levels, layers);
+                            if (hostFormat is Format.Etc2RgbaSrgb or Format.Etc2RgbaUnorm)
+                            {
+                                return ETC2Transcoder.TranscodeBC3ToEtc2Rgba(result.Memory, width, height, sliceDepth, levels, layers);
+                            }
+
+                            MemoryOwner<byte> decodedBc3 = BCnDecoder.DecodeBC3(result.Span, width, height, sliceDepth, levels, layers);
+
+                            return Recompress(decodedBc3, width, height, sliceDepth, levels, layers);
                         }
                     case Format.Bc4Snorm:
                     case Format.Bc4Unorm:
                         using (result)
                         {
+                            if (hostFormat is Format.EacR11Unorm or Format.EacR11Snorm)
+                            {
+                                return ETC2Transcoder.TranscodeBC4ToEacR11(result.Memory, Format == Format.Bc4Snorm);
+                            }
+
                             return BCnDecoder.DecodeBC4(result.Span, width, height, sliceDepth, levels, layers, Format == Format.Bc4Snorm);
                         }
                     case Format.Bc5Snorm:
                     case Format.Bc5Unorm:
                         using (result)
                         {
+                            if (hostFormat is Format.EacR11G11Unorm or Format.EacR11G11Snorm)
+                            {
+                                return ETC2Transcoder.TranscodeBC5ToEacRG11(result.Memory, Format == Format.Bc5Snorm);
+                            }
+
                             return BCnDecoder.DecodeBC5(result.Span, width, height, sliceDepth, levels, layers, Format == Format.Bc5Snorm);
                         }
                     case Format.Bc6HSfloat:
                     case Format.Bc6HUfloat:
                         using (result)
                         {
-                            return BCnDecoder.DecodeBC6(result.Span, width, height, sliceDepth, levels, layers, Format == Format.Bc6HSfloat);
+                            MemoryOwner<byte> decodedBc6 = BCnDecoder.DecodeBC6(result.Span, width, height, sliceDepth, levels, layers, Format == Format.Bc6HSfloat);
+
+                            if (hostFormat == Format.R11G11B10Float)
+                            {
+                                using (decodedBc6)
+                                {
+                                    return PixelConverter.ConvertR16G16B16A16FloatToR11G11B10Float(decodedBc6.Span);
+                                }
+                            }
+
+                            return decodedBc6;
                         }
                     case Format.Bc7Srgb:
                     case Format.Bc7Unorm:
                         using (result)
                         {
-                            return BCnDecoder.DecodeBC7(result.Span, width, height, sliceDepth, levels, layers);
+                            if (hostFormat is Format.Etc2RgbaSrgb or Format.Etc2RgbaUnorm)
+                            {
+                                return ETC2Transcoder.TranscodeBC7ToEtc2Rgba(result.Memory, width, height, sliceDepth, levels, layers);
+                            }
+
+                            MemoryOwner<byte> decodedBc7 = BCnDecoder.DecodeBC7(result.Span, width, height, sliceDepth, levels, layers);
+
+                            return Recompress(decodedBc7, width, height, sliceDepth, levels, layers);
                         }
                 }
             }

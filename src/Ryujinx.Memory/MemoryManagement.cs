@@ -68,6 +68,82 @@ namespace Ryujinx.Memory
             }
         }
 
+        /// <summary>
+        /// Attempts to decommit a range, returning false instead of throwing when the platform refuses.
+        /// </summary>
+        public static bool TryDecommit(nint address, ulong size)
+        {
+            try
+            {
+                if (OperatingSystem.IsWindows())
+                {
+                    MemoryManagementWindows.Decommit(address, (nint)size);
+
+                    return true;
+                }
+                else if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS() || OperatingSystem.IsIOS())
+                {
+                    return MemoryManagementUnix.TryDecommit(address, size);
+                }
+            }
+            catch (SystemException)
+            {
+                return false;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Drops the physical pages backing a range without changing its protection or commit state, so the range stays usable. Returns false if the platform refuses.
+        /// </summary>
+        public static bool TryDiscard(nint address, ulong size)
+        {
+            try
+            {
+                if (OperatingSystem.IsWindows())
+                {
+                    return MemoryManagementWindows.TryDiscardPages(address, (nint)size);
+                }
+                else if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS() || OperatingSystem.IsIOS())
+                {
+                    return MemoryManagementUnix.TryDiscardPages(address, size);
+                }
+            }
+            catch (SystemException)
+            {
+                return false;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Announces that a range previously passed to <see cref="TryDiscard"/> is about to be used again, so it stops being counted as reclaimable. Contents are left alone.
+        /// </summary>
+        public static bool TryUndiscard(nint address, ulong size)
+        {
+            try
+            {
+                if (OperatingSystem.IsWindows())
+                {
+                    // MEM_RESET_UNDO exists, but it can fail simply because the pages are already
+                    // gone, and nothing here depends on the outcome.
+                    return true;
+                }
+                else if (OperatingSystem.IsLinux() || OperatingSystem.IsMacOS() || OperatingSystem.IsIOS())
+                {
+                    return MemoryManagementUnix.TryReuseDiscardedPages(address, size);
+                }
+            }
+            catch (SystemException)
+            {
+                return false;
+            }
+
+            return false;
+        }
+
         public static void MapView(nint sharedMemory, ulong srcOffset, nint address, ulong size, MemoryBlock owner)
         {
             if (OperatingSystem.IsWindows())

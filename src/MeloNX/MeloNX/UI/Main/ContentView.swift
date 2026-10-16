@@ -31,7 +31,6 @@ struct ContentView: View {
     @StateObject var controllerManager: ControllerManager = .shared
     @ObservedObject private var nszImport = NSZImportCoordinator.shared
     @State private var selectedTab: Tab = .games
-    @Environment(\.scenePhase) var scenePhase
     @Environment(\.appTheme) var theme
     
     var tabView: some View {
@@ -45,11 +44,6 @@ struct ContentView: View {
                 .tag(Tab.settings)
         }
         .accentColor(theme.accent.primary)
-        .onOpenURL { url in
-            if url.isFileURL, url.pathExtension.lowercased() == "nsz" {
-                ryujinxController.handleRunningGame(result: .success([url]))
-            } else { AppEnvironment.handleDeepLink(url, ryujinxController: ryujinxController) }
-        }
         .onAppear {
             NativeSettingsManager.setShared()
 #if DEBUG
@@ -58,6 +52,7 @@ struct ContentView: View {
         }
         .task {
             guard await SaveRecoveryBootstrap.shared.ensureReady() else { return }
+            ryujinxController.loadConfig()
             ryujinxController.loadGames()
 #if DEBUG
             await NSZImportDiagnostic.runIfRequested()
@@ -71,7 +66,7 @@ struct ContentView: View {
             
             AlertHandlers.register()
             
-            Air.play(AnyView(Text("Select Game")))
+            Air.play(AnyView(AirplayView().environmentObject(ryujinxController)))
             Task { _ = await BuiltInJITCoordinator.shared.enableAutomatically() }
             
             try? await Task.sleep(nanoseconds: 500_000_000)
@@ -112,6 +107,22 @@ struct ContentView: View {
                 }
         case .noJIT:
             NoJITView(game: game)
+                .onAppear() {
+                    Air.play(AnyView(NoJITView(game: game).environmentObject(ryujinxController)))
+                }
+                .onDisappear() {
+                    if case .started(game: _, state: let state) = ryujinxController.isRunning {
+                        switch state {
+                        case .entitlement, .extendedEntitlement:
+                            Air.play(AnyView(EmptyView()))
+                        case .usersList:
+                            Air.play(AnyView(EmptyView()))
+                        default: break
+                        }
+                    } else {
+                        Air.play(AnyView(AirplayView().environmentObject(ryujinxController)))
+                    }
+                }
         case .extendedEntitlement:
             ControllerView(controller: VirtualControllerManager.shared, isEditing: false)
                 .allowsHitTesting(false)
@@ -174,31 +185,7 @@ struct ContentView: View {
             }
         }
         .onDisappear { if nszImport.isBusy { nszImport.cancel() } }
-        .onChange(of: scenePhase) { newPhase in
-            switch newPhase {
-            case .active:
-                if ryujinxController.isRunning.isRunning() {
-                    if !ryujinxController.wasManuallyPaused {
-                        ryujinxController.isPaused = false
-                    }
-                } else if ryujinxController.pendingLaunchID == nil {
-                    Task { _ = await BuiltInJITCoordinator.shared.enableAutomatically() }
-                }
-            case .inactive:
-                if ryujinxController.isRunning.isRunning(), !ryujinxController.wasManuallyPaused {
-                    ryujinxController.isPaused = true
-                }
-                break
-            case .background:
-                nszImport.cancel()
-                if ryujinxController.isRunning.isRunning(), !ryujinxController.wasManuallyPaused {
-                    ryujinxController.isPaused = true
-                }
-                break
-            @unknown default:
-                break
-            }
-        }
+
     }
 }
 

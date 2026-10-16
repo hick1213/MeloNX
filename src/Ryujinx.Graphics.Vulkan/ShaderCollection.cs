@@ -14,6 +14,7 @@ namespace Ryujinx.Graphics.Vulkan
     {
         private readonly PipelineShaderStageCreateInfo[] _infos;
         private readonly Shader[] _shaders;
+        private readonly Task[] _shaderCompileTasks;
 
         private readonly PipelineLayoutCacheEntry _plce;
 
@@ -69,6 +70,8 @@ namespace Ryujinx.Graphics.Vulkan
         private ProgramPipelineState _state;
         private DisposableRenderPass _dummyRenderPass;
         private Task _compileTask;
+        private Task _initialPipelineCompileTask;
+        private int _backgroundCompilationDemanded;
         private bool _firstBackgroundUse;
         private readonly object _initializeLock;
         private readonly object _pipelineCacheLock;
@@ -136,6 +139,13 @@ namespace Ryujinx.Graphics.Vulkan
             }
 
             _shaders = internalShaders;
+
+            _shaderCompileTasks = new Task[internalShaders.Length];
+
+            for (int i = 0; i < internalShaders.Length; i++)
+            {
+                _shaderCompileTasks[i] = internalShaders[i].CompileTask;
+            }
 
             bool usePushDescriptors = !isMinimal &&
                 VulkanConfiguration.UsePushDescriptors &&
@@ -528,7 +538,7 @@ namespace Ryujinx.Graphics.Vulkan
         {
             if (!CompilesInBackground)
             {
-                await Task.WhenAll(_shaders.Select(shader => shader.CompileTask));
+                await Task.WhenAll(_shaderCompileTasks);
 
                 if (Array.Exists(_shaders, shader => shader.CompileStatus == ProgramLinkStatus.Failure))
                 {
@@ -565,7 +575,10 @@ namespace Ryujinx.Graphics.Vulkan
                     return;
                 }
 
-                await RunBackgroundPipelineCompile(pipelineCache =>
+                bool demanded = Volatile.Read(ref _backgroundCompilationDemanded) != 0;
+                bool highPriority = _highPriorityBackgroundCompilation || demanded;
+
+                Task pipelineCompileTask = RunBackgroundPipelineCompile(pipelineCache =>
                 {
                     if (IsCompute)
                     {
@@ -575,7 +588,16 @@ namespace Ryujinx.Graphics.Vulkan
                     {
                         CreateBackgroundGraphicsPipeline(pipelineCache);
                     }
-                }, highPriority: _highPriorityBackgroundCompilation);
+                }, highPriority, demanded);
+
+                Volatile.Write(ref _initialPipelineCompileTask, pipelineCompileTask);
+
+                if (Volatile.Read(ref _backgroundCompilationDemanded) != 0)
+                {
+                    _gd.BackgroundCompilationScheduler.PromotePipelineCompile(pipelineCompileTask);
+                }
+
+                await pipelineCompileTask;
             }
             catch (VulkanException e)
             {
@@ -587,7 +609,28 @@ namespace Ryujinx.Graphics.Vulkan
             }
             finally
             {
+                Volatile.Write(ref _initialPipelineCompileTask, null);
                 ClearInitialBackgroundPipelineTask();
+            }
+        }
+
+        public void PromoteBackgroundCompilation()
+        {
+            if (!CompilesInBackground || Interlocked.Exchange(ref _backgroundCompilationDemanded, 1) != 0)
+            {
+                return;
+            }
+
+            foreach (Shader shader in _shaders)
+            {
+                shader.PromoteCompilation();
+            }
+
+            Task pipelineCompileTask = Volatile.Read(ref _initialPipelineCompileTask);
+
+            if (pipelineCompileTask != null)
+            {
+                _gd.BackgroundCompilationScheduler.PromotePipelineCompile(pipelineCompileTask);
             }
         }
 
@@ -658,9 +701,9 @@ namespace Ryujinx.Graphics.Vulkan
             }
         }
 
-        private Task RunBackgroundPipelineCompile(Action<PipelineCache> compileAction, bool highPriority)
+        private Task RunBackgroundPipelineCompile(Action<PipelineCache> compileAction, bool highPriority, bool demanded = false)
         {
-            return _gd.BackgroundCompilationScheduler.SchedulePipelineCompile(compileAction, highPriority);
+            return _gd.BackgroundCompilationScheduler.SchedulePipelineCompile(compileAction, highPriority, demanded);
         }
 
         private void LogBackgroundPipelineFailure(Exception exception)
@@ -672,7 +715,7 @@ namespace Ryujinx.Graphics.Vulkan
         {
             try
             {
-                await Task.WhenAll(_shaders.Select(shader => shader.CompileTask));
+                await Task.WhenAll(_shaderCompileTasks);
             }
             catch (Exception e)
             {
@@ -726,9 +769,15 @@ namespace Ryujinx.Graphics.Vulkan
                 return false;
             }
 
-            if (!blocking && _shaders.Any(shader => shader.CompileStatus == ProgramLinkStatus.Incomplete))
+            if (!blocking)
             {
-                return false;
+                for (int i = 0; i < _shaders.Length; i++)
+                {
+                    if (_shaders[i].CompileStatus == ProgramLinkStatus.Incomplete)
+                    {
+                        return false;
+                    }
+                }
             }
 
             lock (_initializeLock)
@@ -777,6 +826,11 @@ namespace Ryujinx.Graphics.Vulkan
 
         public bool TryGetInfos(out PipelineShaderStageCreateInfo[] infos, bool blocking)
         {
+            if (blocking)
+            {
+                PromoteBackgroundCompilation();
+            }
+
             if (EnsureShadersReady(blocking))
             {
                 infos = _infos;
@@ -789,9 +843,11 @@ namespace Ryujinx.Graphics.Vulkan
 
         public bool WaitForShaderModules(int timeoutMs)
         {
+            PromoteBackgroundCompilation();
+
             try
             {
-                return Task.WaitAll(_shaders.Select(shader => shader.CompileTask).ToArray(), timeoutMs);
+                return Task.WaitAll(_shaderCompileTasks, timeoutMs);
             }
             catch (AggregateException)
             {
@@ -1142,7 +1198,7 @@ namespace Ryujinx.Graphics.Vulkan
                         pipelineCache,
                         throwOnError: false,
                         cachePipelineFailure: false);
-                }, highPriority: true);
+                }, highPriority: true, demanded: true);
 
                 if (pipeline == null)
                 {
@@ -1239,7 +1295,7 @@ namespace Ryujinx.Graphics.Vulkan
                         renderPass.GetUnsafe().Value,
                         throwOnError: false,
                         cachePipelineFailure: false);
-                }, highPriority: true);
+                }, highPriority: true, demanded: true);
 
                 if (pipeline == null)
                 {

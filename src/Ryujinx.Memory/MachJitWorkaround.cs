@@ -124,6 +124,11 @@ namespace Ryujinx.Memory
 
         public static nint AllocateSharedMemory(ulong size, bool reserve)
         {
+            if (DonatedMemory.TryAllocate(size, out nint donated))
+            {
+                return donated;
+            }
+
             nint address = 0;
 
             int err = vm_allocate(mach_task_self(), &address, (nint)size, VM_FLAGS_ANYWHERE);
@@ -138,6 +143,11 @@ namespace Ryujinx.Memory
 
         public static void DestroySharedMemory(nint handle, ulong size)
         {
+            if (DonatedMemory.Free(handle))
+            {
+                return;
+            }
+
             vm_deallocate(mach_task_self(), handle, (nint)size);
         }
 

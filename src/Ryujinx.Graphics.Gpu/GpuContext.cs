@@ -1,11 +1,13 @@
 using Ryujinx.Common;
 using Ryujinx.Common.Configuration;
+using Ryujinx.Common.Logging;
 using Ryujinx.Graphics.Device;
 using Ryujinx.Graphics.GAL;
 using Ryujinx.Graphics.Gpu.Engine.GPFifo;
 using Ryujinx.Graphics.Gpu.Memory;
 using Ryujinx.Graphics.Gpu.Shader;
 using Ryujinx.Graphics.Gpu.Synchronization;
+using Ryujinx.Memory;
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
@@ -333,6 +335,74 @@ namespace Ryujinx.Graphics.Gpu
             {
                 physicalMemory.ShaderCache.ProcessShaderCacheQueue();
             }
+        }
+
+        private const ulong TrimMiB = 1024 * 1024;
+        private const ulong ComfortableHeadroomBytes = 768 * TrimMiB;
+        private const ulong CriticalHeadroomBytes = 256 * TrimMiB;
+        private const long MinimumTrimIntervalMs = 2000;
+
+        private long _lastTrimTimestamp;
+
+        /// <summary>
+        /// Evicts GPU resource caches in response to host memory pressure, in proportion to what
+        /// they are actually holding and only when this process looks like the one under pressure.
+        /// </summary>
+        /// <param name="level">How much the host wants back</param>
+        public void TrimCaches(MemoryPressureLevel level)
+        {
+            if (level == MemoryPressureLevel.Normal || !GraphicsConfig.EnableHostMemoryBudgetTracking)
+            {
+                return;
+            }
+
+            ulong available = HostMemoryBudget.AvailableBytes;
+
+            if (available != 0)
+            {
+                if (available >= ComfortableHeadroomBytes)
+                {
+                    Logger.Debug?.Print(LogClass.Gpu,
+                        $"Ignoring {level} host memory pressure with {available / TrimMiB} MiB still available to this process");
+
+                    return;
+                }
+
+                if (available <= CriticalHeadroomBytes)
+                {
+                    level = MemoryPressureLevel.Critical;
+                }
+            }
+
+            long now = Environment.TickCount64;
+
+            if (_lastTrimTimestamp != 0 && now - _lastTrimTimestamp < MinimumTrimIntervalMs)
+            {
+                return;
+            }
+
+            _lastTrimTimestamp = now;
+
+            ulong evicted = 0;
+
+            foreach (PhysicalMemory physicalMemory in PhysicalMemoryRegistry.Values)
+            {
+                evicted += physicalMemory.TextureCache.Trim(level);
+                evicted += physicalMemory.BufferCache.Trim(level);
+            }
+
+            if (evicted == 0)
+            {
+                Logger.Debug?.Print(LogClass.Gpu,
+                    $"Host reported {level} memory pressure, but the GPU caches are already trimmed");
+
+                return;
+            }
+
+            string headroom = available != 0 ? $", {available / TrimMiB} MiB available" : string.Empty;
+
+            Logger.Info?.Print(LogClass.Gpu,
+                $"Host reported {level} memory pressure{headroom}, released {evicted / TrimMiB} MiB of GPU caches");
         }
 
         /// <summary>

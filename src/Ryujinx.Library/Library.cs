@@ -43,8 +43,10 @@ using ConfigGamepadInputId = Ryujinx.Common.Configuration.Hid.Controller.Gamepad
 using ConfigStickInputId = Ryujinx.Common.Configuration.Hid.Controller.StickInputId;
 using Key = Ryujinx.Common.Configuration.Hid.Key;
 using Ryujinx.HLE.HOS.SystemState;
+using LibHac.Account;
 using LibHac.Common.Keys;
 using LibHac.Common;
+using LibHac.Fs.Shim;
 using LibHac.Ns;
 using LibHac.Tools.Fs;
 using LibHac.Tools.FsSystem.NcaUtils;
@@ -278,6 +280,132 @@ namespace Ryujinx.Library
             }
 
             return nint.Zero;
+        }
+
+        [UnmanagedCallersOnly(EntryPoint = "get_save_data_path")]
+        public static unsafe SaveDataPath GetSaveDataPathNative(nint titleIdPtr, int saveDataType)
+        {
+            try
+            {
+                string titleIdString = Marshal.PtrToStringAnsi(titleIdPtr);
+
+                if (!ulong.TryParse(titleIdString, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out ulong titleId) || titleId == 0)
+                {
+                    return SaveDataPathFailure($"\"{titleIdString}\" is not a valid title id.");
+                }
+
+                LibHac.Fs.UserId userId = default;
+                LibHac.Fs.SaveDataType type;
+
+                switch (saveDataType)
+                {
+                    case 1:
+                        type = LibHac.Fs.SaveDataType.Device;
+                        break;
+                    case 2:
+                        type = LibHac.Fs.SaveDataType.Bcat;
+                        break;
+                    default:
+                        type = LibHac.Fs.SaveDataType.Account;
+                        userId = _accountManager.LastOpenedUser.UserId.ToLibHac();
+                        break;
+                }
+
+                SaveDataFilter filter = SaveDataFilter.Make(titleId, type, userId, saveDataId: default, index: default);
+
+                if (!TryFindSaveDataId(titleId, in filter, out ulong saveDataId, out string error))
+                {
+                    return SaveDataPathFailure(error);
+                }
+
+                string saveRootPath = Path.Combine(VirtualFileSystem.GetNandPath(), $"user/save/{saveDataId:x16}");
+
+                if (!Directory.Exists(saveRootPath))
+                {
+                    Directory.CreateDirectory(saveRootPath);
+                }
+
+                string committedPath = Path.Combine(saveRootPath, "0");
+                string workingPath = Path.Combine(saveRootPath, "1");
+
+                if (!Directory.Exists(committedPath))
+                {
+                    if (!Directory.Exists(workingPath))
+                    {
+                        Directory.CreateDirectory(workingPath);
+                    }
+
+                    return new SaveDataPath { success = true, value = (sbyte*)Marshal.StringToHGlobalAnsi(workingPath) };
+                }
+
+                return new SaveDataPath { success = true, value = (sbyte*)Marshal.StringToHGlobalAnsi(committedPath) };
+            }
+            catch (Exception exception)
+            {
+                return SaveDataPathFailure(exception.Message);
+            }
+        }
+
+        [UnmanagedCallersOnly(EntryPoint = "free_save_data_path")]
+        public static unsafe void FreeSaveDataPath(SaveDataPath saveDataPath)
+        {
+            if (saveDataPath.value != null)
+            {
+                Marshal.FreeHGlobal((nint)saveDataPath.value);
+            }
+        }
+
+        private static unsafe SaveDataPath SaveDataPathFailure(string message)
+        {
+            Logger.Error?.Print(LogClass.Application, $"Unable to resolve the save directory: {message}");
+
+            return new SaveDataPath { success = false, value = (sbyte*)Marshal.StringToHGlobalAnsi(message) };
+        }
+
+        private static bool TryFindSaveDataId(ulong titleId, in SaveDataFilter filter, out ulong saveDataId, out string error)
+        {
+            saveDataId = default;
+            error = null;
+
+            var horizonClient = _libHacHorizonManager.RyujinxClient;
+
+            LibHac.Result result = horizonClient.Fs.FindSaveDataWithFilter(out SaveDataInfo saveDataInfo, SaveDataSpaceId.User, in filter);
+
+            if (ResultFs.TargetNotFound.Includes(result))
+            {
+                Logger.Info?.Print(LogClass.Application, $"Creating save directory for Title: {titleId:x16}");
+
+                BlitStruct<ApplicationControlProperty> controlHolder = new(1);
+                ref ApplicationControlProperty control = ref controlHolder.Value;
+
+                control.UserAccountSaveDataSize = 0x4000;
+                control.UserAccountSaveDataJournalSize = 0x4000;
+
+                Uid user = _accountManager.LastOpenedUser.UserId.ToLibHacUid();
+
+                result = horizonClient.Fs.EnsureApplicationSaveData(out _, new LibHac.Ncm.ApplicationId(titleId), in control, in user);
+
+                if (result.IsFailure())
+                {
+                    error = $"The save directory could not be created ({result.ToStringWithName()}).";
+
+                    return false;
+                }
+
+                // Try to find the savedata again after creating it
+                result = horizonClient.Fs.FindSaveDataWithFilter(out saveDataInfo, SaveDataSpaceId.User, in filter);
+            }
+
+            if (result.IsFailure())
+            {
+                error = $"The save directory could not be found ({result.ToStringWithName()}).";
+
+                return false;
+            }
+
+            saveDataId = saveDataInfo.SaveDataId;
+
+            return true;
         }
 
         [UnmanagedCallersOnly(EntryPoint = "create_account")]
@@ -722,8 +850,8 @@ namespace Ryujinx.Library
                     Backend          = InputBackendType.GamepadSDL2,
                     Id               = null,
                     ControllerType   = controllerType,
-                    DeadzoneLeft     = 0.1f,
-                    DeadzoneRight    = 0.1f,
+                    DeadzoneLeft     = 0.0f,
+                    DeadzoneRight    = 0.0f,
                     RangeLeft        = 1.0f,
                     RangeRight       = 1.0f,
                     TriggerThreshold = 0.5f,
@@ -824,6 +952,7 @@ namespace Ryujinx.Library
             GraphicsConfig.ShadersDumpPath = option.GraphicsShadersDumpPath;
             GraphicsConfig.EnableMacroHLE = !option.DisableMacroHLE;
             GraphicsConfig.EnableColorSpacePassthrough = true;
+            GraphicsConfig.EnableHostMemoryBudgetTracking = option.EnableHostMemoryBudgetTracking;
 
             EnsureKeyboardFallback();
 
@@ -1063,6 +1192,7 @@ namespace Ryujinx.Library
             _window.AntiAliasing = options.AntiAliasing;
             _window.ScalingFilter = options.ScalingFilter;
             _window.ScalingFilterLevel = options.ScalingFilterLevel;
+            _window.MetalFxUpscaleFactor = options.MetalFxUpscaleFactor;
             renderer.Window?.SetColorSpacePassthrough(true);
 
             _emulationContext = InitializeEmulationContext(window, renderer, options);
@@ -1179,6 +1309,12 @@ namespace Ryujinx.Library
         {
             public fixed byte Path[256];
             public ulong TitleId;
+        }
+
+        public unsafe struct SaveDataPath
+        {
+            public bool success;
+            public sbyte* value;
         }
 
         public unsafe struct DlcNcaList

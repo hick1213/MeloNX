@@ -23,10 +23,16 @@ class ControllerManager: ObservableObject {
     @Published var selectedControllers: [String] = [] 
     private var didInitControllerObservers = false
     
+    @Published private(set) var hasPhysicalController = false
+    
+    private var menuListeners: [(id: UUID, handler: (MenuNavigation) -> Void)] = []
+    private var menuNavigator: MenuNavigator?
+    
     
     func initAll() {
         refreshControllersList()
         initControllerObservers()
+        SteamControllerBackend.shared.start()
     }
     
     private init() {
@@ -43,14 +49,24 @@ class ControllerManager: ObservableObject {
     
     
     func refreshControllersList(_ inGameSelector: Bool = false) {
-        let connectedNativeControllers = Set(GCController.controllers())
+        let nativeSettingsManager: NativeSettingsManager = .shared
+        let connectedNativeControllers = GCController.controllers()
+        let connectedSet = Set(connectedNativeControllers)
+        let steamControllers = Thread.isMainThread ? SteamControllerBackend.shared.controllers : DispatchQueue.main.sync { SteamControllerBackend.shared.controllers }
+        let previousSelection = selectedControllerIdsSnapshot()
         
         controllerQueue.async(flags: .barrier) { [weak self] in
             guard let self = self else { return }
             
             var controllersToRemove: [BaseController] = []
             for controller in self._privAllControllers where !controller.virtual {
-                if let native = controller.nativeController, !connectedNativeControllers.contains(native) {
+                if let steam = controller as? SteamController {
+                    if !steamControllers.contains(where: { $0 === steam }) {
+                        controllersToRemove.append(controller)
+                    }
+                    continue
+                }
+                if let native = controller.nativeController, !connectedSet.contains(native) {
                     controllersToRemove.append(controller)
                 }
             }
@@ -60,15 +76,33 @@ class ControllerManager: ObservableObject {
                 self._privAllControllers.removeAll { $0 === controller }
             }
             
-            for (_, nativeController) in connectedNativeControllers.enumerated() {
+            for nativeController in connectedNativeControllers {
                 if !self._privAllControllers.contains(where: { $0.nativeController === nativeController }) {
                     let newController = NativeController(nativeController: nativeController)
                     self._privAllControllers.append(newController)
                 }
             }
             
+            for controller in steamControllers where !self._privAllControllers.contains(where: { $0 === controller }) {
+                self._privAllControllers.append(controller)
+            }
+            
+            let virtualControllers = self._privAllControllers.filter { $0.virtual }
+            let physical = self._privAllControllers
+                .filter { !$0.virtual }
+                .sorted { lhs, rhs in
+                    let lhsIndex = connectedNativeControllers.firstIndex { $0 === lhs.nativeController } ?? (connectedNativeControllers.count + (steamControllers.firstIndex { $0 === lhs } ?? steamControllers.count))
+                    
+                    let rhsIndex = connectedNativeControllers.firstIndex { $0 === rhs.nativeController } ?? (connectedNativeControllers.count + (steamControllers.firstIndex { $0 === rhs } ?? steamControllers.count))
+                    
+                    return lhsIndex < rhsIndex
+                }
+            
+            self._privAllControllers = virtualControllers + physical
+            
             // Full Keyboard Support may come eventually, i'm just too lazy :3
             // _privAllControllers.append(KBController()) // This was just an experiment, yes it did work, no i'm not bothered to fully implement it.
+            
             
             let physicalControllers = self._privAllControllers.prefix(7).filter { !$0.virtual }.compactMap(\.id) as [String]
             let controllers = Array(self._privAllControllers.prefix(7))
@@ -76,15 +110,20 @@ class ControllerManager: ObservableObject {
             let selectedControllerIds: [String]
             
             if inGameSelector {
-                selectedControllerIds = selectedControllers
-            } else {
+                let known = Set(self._privAllControllers.map(\.id))
+                selectedControllerIds = previousSelection.filter { known.contains($0) }
+            } else if !nativeSettingsManager.virtualControllerOffDefault(ProcessInfo.processInfo.isiOSAppOnMac).value {
                 selectedControllerIds = physicalControllers.isEmpty ? [self.virtualController.id] : physicalControllers
+            } else {
+                selectedControllerIds = physicalControllers
             }
+            
             // RyujinxController.shared.isRunning.isRunning(
             
             DispatchQueue.main.async {
                 self.allControllers = controllers
                 self.selectedControllers = selectedControllerIds
+                self.hasPhysicalController = controllers.contains { !$0.virtual }
                 
                 let isRunning = RyujinxController.shared.isRunning.isRunning()
                 
@@ -107,18 +146,30 @@ class ControllerManager: ObservableObject {
                 Ryujinx.detachGamepad(controller.pointer)
             }
             
-            for (index, controllerId) in selectedControllerIds.enumerated() {
-                let cont = _privAllControllers.first(where: { $0.id == controllerId })
-                guard let cont else { continue }
-                if cont.controllerType != config.controllerType(for: index) {
-                    cont.controllerType ?= config.controllerType(for: index)
+            var playerIndex = 0
+            
+            for controllerId in selectedControllerIds {
+                guard let cont = _privAllControllers.first(where: { $0.id == controllerId }) else { continue }
+                
+                if cont.controllerType != config.controllerType(for: playerIndex) {
+                    cont.controllerType ?= config.controllerType(for: playerIndex)
                 }
                 
-                cont.attach(index, controllerType: cont.controllerType)
+                cont.attach(playerIndex, controllerType: cont.controllerType)
+                
+                playerIndex += 1
             }
         }
     }
     
+    
+    var resolvedSelection: [(id: String, controller: BaseController)] {
+        selectedControllers.compactMap { id in
+            guard let controller = allControllers.first(where: { $0.id == id }) else { return nil }
+            
+            return (id, controller)
+        }
+    }
     
     private func selectedControllerIdsSnapshot() -> [String] {
         if Thread.isMainThread {
@@ -186,6 +237,42 @@ class ControllerManager: ObservableObject {
             DispatchQueue.global(qos: .userInitiated).asyncAfter(deadline: .now() + 0.1) {
                 self.refreshControllersList()
             }
+        }
+    }
+    
+    @MainActor
+    func beginMenuNavigation(_ id: UUID, handler: @escaping (MenuNavigation) -> Void) {
+        if let index = menuListeners.firstIndex(where: { $0.id == id }) {
+            menuListeners[index].handler = handler
+        } else {
+            menuListeners.append((id, handler))
+        }
+        
+        syncMenuNavigation()
+    }
+    
+    @MainActor
+    func endMenuNavigation(_ id: UUID) {
+        menuListeners.removeAll { $0.id == id }
+        
+        syncMenuNavigation()
+    }
+    
+    @MainActor
+    private func syncMenuNavigation() {
+        guard !menuListeners.isEmpty else {
+            menuNavigator?.stop()
+            menuNavigator = nil
+            
+            return
+        }
+        
+        let navigator = menuNavigator ?? MenuNavigator()
+        
+        menuNavigator = navigator
+        
+        navigator.start { [weak self] event in
+            self?.menuListeners.last?.handler(event)
         }
     }
     

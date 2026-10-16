@@ -4,6 +4,7 @@ using Ryujinx.Audio.Backends.CompatLayer;
 using Ryujinx.Audio.Integration;
 using Ryujinx.Common;
 using Ryujinx.Common.Configuration;
+using Ryujinx.Common.Logging;
 using Ryujinx.Cpu;
 using Ryujinx.Graphics.Gpu;
 using Ryujinx.HLE.FileSystem;
@@ -76,9 +77,11 @@ namespace Ryujinx.HLE
             FileSystem = Configuration.VirtualFileSystem;
             UIHandler = Configuration.HostUIHandler;
 
-            MemoryAllocationFlags memoryAllocationFlags = configuration.MemoryManagerMode == MemoryManagerMode.SoftwarePageTable
-                ? MemoryAllocationFlags.Reserve
-                : MemoryAllocationFlags.Reserve;
+            
+            MemoryAllocationFlags memoryAllocationFlags = OperatingSystem.IsIOS() ||
+                    configuration.MemoryManagerMode == MemoryManagerMode.SoftwarePageTable
+                ? MemoryAllocationFlags.None
+                : MemoryAllocationFlags.Reserve | MemoryAllocationFlags.Mirrorable;
 
 #pragma warning disable IDE0055 // Disable formatting
             DirtyHacks        = new DirtyHacks(Configuration.Hacks);
@@ -109,10 +112,25 @@ namespace Ryujinx.HLE
 #pragma warning restore IDE0055
 
             Shared = this;
+
+            if (GraphicsConfig.EnableHostMemoryBudgetTracking &&
+                MemoryPressureMonitor.IsSupported &&
+                !MemoryPressureMonitor.Start())
+            {
+                Logger.Warning?.Print(LogClass.Emulation,
+                    "Could not subscribe to host memory pressure notifications; caches will only be trimmed by their own limits.");
+            }
         }
 
         public void ProcessFrame()
         {
+            MemoryPressureLevel pressure = MemoryPressureMonitor.ConsumePendingLevel();
+
+            if (pressure != MemoryPressureLevel.Normal)
+            {
+                Gpu.TrimCaches(pressure);
+            }
+
             Gpu.ProcessShaderCacheQueue();
             Gpu.Renderer.PreFrame();
             Gpu.GPFifo.DispatchCalls();

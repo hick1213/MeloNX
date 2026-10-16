@@ -42,7 +42,9 @@ namespace Ryujinx.Graphics.Vulkan
         {
             if (!Unsafe.As<ulong, Vector256<byte>>(ref Id0).Equals(Unsafe.As<ulong, Vector256<byte>>(ref other.Id0)) ||
                 !Unsafe.As<ulong, Vector256<byte>>(ref Id4).Equals(Unsafe.As<ulong, Vector256<byte>>(ref other.Id4)) ||
-                !Unsafe.As<ulong, Vector128<byte>>(ref Id7).Equals(Unsafe.As<ulong, Vector128<byte>>(ref other.Id7)))
+                !Unsafe.As<ulong, Vector128<byte>>(ref Id7).Equals(Unsafe.As<ulong, Vector128<byte>>(ref other.Id7)) ||
+                AttachmentIntegerFormatMask != other.AttachmentIntegerFormatMask ||
+                LogicOpsAllowed != other.LogicOpsAllowed)
             {
                 return false;
             }
@@ -85,7 +87,9 @@ namespace Ryujinx.Graphics.Vulkan
                            Id5 * 23 ^
                            Id6 * 23 ^
                            Id7 * 23 ^
-                           Id8 * 23;
+                           Id8 * 23 ^
+                           AttachmentIntegerFormatMask * 23 ^
+                           (LogicOpsAllowed ? 23UL : 0UL);
             
             ReadOnlySpan<VertexInputAttributeDescription> vertexAttributeDescriptionsSpan = VertexAttributeDescriptions.AsSpan();
 
@@ -121,8 +125,9 @@ namespace Ryujinx.Graphics.Vulkan
             }
             
             ReadOnlySpan<Format> attachmentFormatsSpan = AttachmentFormats.AsSpan();
+            int attachmentFormatsCount = (int)ColorBlendAttachmentStateCount + (HasDepthStencil ? 1 : 0);
 
-            for (int i = 0; i < (int)ColorBlendAttachmentStateCount; i++)
+            for (int i = 0; i < attachmentFormatsCount; i++)
             {
                 hash64 ^= (uint)attachmentFormatsSpan[i] * 23;
             }

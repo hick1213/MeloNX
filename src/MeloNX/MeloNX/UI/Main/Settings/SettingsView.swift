@@ -43,7 +43,7 @@ struct SettingsView: View {
             get: { ryujinxController.settings },
             set: {
                 ryujinxController.settings = $0
-                ryujinxController.saveConfig()
+                ryujinxController.scheduleConfigSave()
             }
         )
     }
@@ -243,6 +243,8 @@ struct SettingsView: View {
                             let memoryLimit = checkAppEntitlement("com.apple.developer.kernel.increased-memory-limit")
                             let extendedVirtualAddressing = checkAppEntitlement("com.apple.developer.kernel.extended-virtual-addressing")
                             Menu {
+                                Text(memoryText)
+                                
                                 Button {
                                     if !memoryLimit {
                                         UIApplication.shared.open(URL(string: "https://git.ryujinx.app/projects/MeloNX#entitlements")!)
@@ -582,8 +584,17 @@ struct SettingsView: View {
             }
 
             Section("Scaling Options") {
+                Picker("Anti-Aliasing", selection: config.antiAliasing) {
+                    ForEach(AntiAliasing.allCases, id: \.self) { antiAliasing in
+                        Text(antiAliasing.displayName).tag(antiAliasing)
+                    }
+                }
+                .pickerStyle(.menu)
+
                 Picker("Scaling Filter", selection: config.scalingFilter) {
-                    ForEach(ScalingFilter.allCases, id: \.self) { filter in
+                    ForEach(ScalingFilter.allCases.filter {
+                        config.wrappedValue.graphicsBackend == .vulkan || $0 != .metalFx
+                    }, id: \.self) { filter in
                         Text(filter.displayName).tag(filter)
                     }
                 }
@@ -603,6 +614,26 @@ struct SettingsView: View {
                         minLabel: "0%",
                         maxLabel: "100%",
                         format: "%.0f"
+                    )
+                } else if config.wrappedValue.scalingFilter == .metalFx {
+                    let outputScaleBinding = Binding<Float>(
+                        get: {
+                            config.wrappedValue.metalFxUpscaleFactor >= 4.0 ? 3.1 : config.wrappedValue.metalFxUpscaleFactor
+                        },
+                        set: { sliderValue in
+                            config.wrappedValue.metalFxUpscaleFactor = sliderValue >= 3.05 ? 4.0 : (sliderValue * 10).rounded() / 10
+                        }
+                    )
+
+                    SliderRow(
+                        "MetalFX Output Scale",
+                        value: outputScaleBinding,
+                        range: 1.0...3.1,
+                        step: 0.1,
+                        minLabel: "1.0x (Off)",
+                        maxLabel: "Host",
+                        format: "%.1f",
+                        maximumValueDisplay: "Host"
                     )
                 }
             }
@@ -624,6 +655,10 @@ struct SettingsView: View {
                 NativeToggleRow("Shader Cache", icon: "memorychip",
                                 isOn: config.disableShaderCache.reversed,
                                 info: "Shader Cache saves shaders to a file and preloads them on game launch. Leave OFF if unsure.")
+
+                NativeToggleRow("Texture Recompression", icon: "arrow.down.and.line.horizontal.and.arrow.up",
+                                isOn: config.enableTextureRecompression,
+                                info: "Re-compresses textures that your GPU can't use directly (such as BC textures on devices without BC support) instead of storing them uncompressed. Uses much less memory at a small cost in quality and texture loading time. Leave ON if unsure.")
                 
                 Picker("VSync Mode", selection: vSyncModeBinding) {
                     ForEach(VSyncMode.allCases) { mode in
@@ -658,13 +693,17 @@ struct SettingsView: View {
                                 info: "Compiles Vulkan shader pipelines in the background to reduce stalls. Newly seen effects may appear after compilation finishes. May break graphics or cause crashes in some games.")
                 .tint(.red)
                 .foregroundStyle(.red)
+
+                NativeToggleRow("Host Memory Budget Tracking", icon: "memorychip",
+                                isOn: config.enableHostMemoryBudgetTracking,
+                                info: "Sizes the texture and buffer caches from how much memory this app may actually use, and shrinks them when the system asks for memory back. Turn OFF if a game renders a blank or white screen, or loses geometry after a few seconds.")
             }
             
             // Performance Overlay
             Section("Performance Overlay") {
                 NativeToggleRow("Performance Overlay", icon: "speedometer",
                                 isOn: nativeSettingsManager.performacehud.projectedValue,
-                                info: "Shows framerate, frametime, memory usage, fifo (First In, First Out) and battery info while a game is running.")
+                                info: "Shows framerate, frametime, fifo (First In, First Out) and battery info while a game is running.")
                 
                 if nativeSettingsManager.performacehud.value {
                     NativeToggleRow("Show Battery Percentage", icon: "battery.100percent.bolt",
@@ -709,13 +748,13 @@ struct SettingsView: View {
     
     var inputForm: some View {
         Form {
-            Section("Controller Selection") {
+            Section {
                 if controllerManager.selectedControllers.isEmpty {
                     Text("No controllers selected, keyboard will be used")
                         .foregroundColor(.secondary)
                 } else {
-                    ForEach(Array(controllerManager.selectedControllers.enumerated()), id: \.offset) { index, id in
-                        ControllerRow(index: index, controllerId: id, controllerManager: controllerManager)
+                    ForEach(Array(controllerManager.resolvedSelection.enumerated()), id: \.offset) { index, entry in
+                        ControllerRow(index: index, controllerId: entry.id, controllerManager: controllerManager)
                     }
                 }
                 if hasAvailableControllers {
@@ -731,6 +770,10 @@ struct SettingsView: View {
                         Label("Add Controller", systemImage: "plus.circle.fill")
                     }
                 }
+            } header: {
+                Text("Controller Selection")
+            } footer: {
+                Text("Long-press the virtual controller to switch controller type.")
             }
             
             if controllerManager.selectedControllers.isEmpty {
@@ -744,20 +787,8 @@ struct SettingsView: View {
                 }
             }
             
-            // Button mapping
-            Section {
-                NativeToggleRow(
-                    "Swap Face Buttons (Physical Controller)",
-                    icon: "rectangle.2.swap",
-                    isOn: nativeSettingsManager.swapBandA.projectedValue,
-                    info: "Swaps A ↔ B and X ↔ Y on ALL physical controllers. To swap only one controller, use the Settings app."
-                )
-            } header: {
-                Text("Button Mapping")
-            }
-            
             // On-Screen Controller
-            Section("On-Screen Controller") {
+            Section("Global On-Screen Controller Options") {
                 Button {
                     isShowingGameController = true
                 } label: {
@@ -832,7 +863,7 @@ struct SettingsView: View {
             Section("Debug Logging") {
                 NativeToggleRow("Debug Logs", icon: "exclamationmark.bubble",
                                 isOn: config.loggingEnableDebug,
-                                info: "Prints debug log messages. Only enable if asked by a staff member — it degrades performance and makes logs harder to read.")
+                                info: "Prints debug log messages. Only enable if asked by a staff member, it degrades performance and makes logs harder to read.")
                 NativeToggleRow("Trace Logs", icon: "waveform.path",
                                 isOn: config.loggingEnableTrace,
                                 info: "Prints trace log messages. Does not affect performance.")
@@ -860,14 +891,35 @@ struct SettingsView: View {
                                 isOn: config.expandRAM,
                                 info: "Uses an alternative memory mode with 8 GiB DRAM to mimic a Switch dev unit. Only useful for high-res texture packs or 4K mods. Does NOT improve performance. Leave OFF if unsure.")
                 .disabled(5723 > totalMemory)
+                
                 NativeToggleRow("Ignore Missing Services", icon: "waveform.path",
                                 isOn: config.ignoreMissingServices,
                                 info: "Ignores unimplemented Horizon OS services. May help bypass crashes on certain games. Leave OFF if unsure.")
+                
+                NativeToggleRow("Donate Guest RAM", icon: "externaldrive.connected.to.line.below",
+                                isOn: nativeSettingsManager.donateGuestMemory(true).projectedValue,
+                                info: "Holds guest RAM in helper processes so it counts against their memory limits instead of MeloNX's. Experimental: the helpers can be killed under memory pressure, which ends the game. Leave ON if unsure.")
+                .disabled(!RamDonor.isSupported)
+                
+                NativeToggleRow("Donate GPU Buffers", icon: "memorychip",
+                                isOn: nativeSettingsManager.donateGpuBuffers(false).projectedValue,
+                                info: "Reserves up to 512 MiB in memory helpers for eligible GPU buffers and uploads. May reduce MeloNX's memory footprint in large scenes; does not move texture allocations. Experimental, requires a game restart. Falls back to normal memory when unavailable.")
+                .disabled(!RamDonor.isSupported)
+                
+                NativeToggleRow("Kill Helpers After Mapping", icon: "xmark.octagon",
+                                isOn: nativeSettingsManager.killDonorsAfterMapping(true).projectedValue,
+                                info: "kills the memory helpers as soon as their memory has been mapped, then keeps running on it. Leave ON if unsure.")
+                .disabled(!RamDonor.isSupported || !(nativeSettingsManager.donateGuestMemory(true).value || nativeSettingsManager.donateGpuBuffers(true).value))
             } header: {
                 Text("Memory")
             } footer: {
-                if totalMemory < 5723 {
-                    Text("Expand Guest RAM requires at least 6 GB of physical memory.")
+                VStack(alignment: .leading, spacing: 4) {
+                    if totalMemory < 5723 {
+                        Text("Expand Guest RAM requires at least 6 GB of physical memory.")
+                    }
+                    if !RamDonor.isSupported {
+                        Text("Donate Guest RAM needs the memory helper, which is missing from however you sideloaded this.")
+                    }
                 }
             }
             
@@ -880,6 +932,7 @@ struct SettingsView: View {
                 .sheet(isPresented: $showingMemoryLimit) {
                     RamLimitTestView()
                 }
+
                 
                 LabeledRow(label: "Page Size", value: String(Int(getpagesize())))
                 if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
@@ -921,8 +974,8 @@ struct SettingsView: View {
             Section("Saves") {
                 NavigationLink { GameSaveSyncView() } label: { Label("iCloud Saves", systemImage: "icloud") }
             }
-            // Custom ROM Folders
-            Section("Custom ROM Folders") {
+            // External ROM Folders
+            Section("External ROM Folders") {
                 FolderListView()
             }
             
@@ -991,6 +1044,17 @@ struct SettingsView: View {
                         Text(type.displayName).tag(type)
                     }
                 }
+                
+                Picker("AirPlay Library View", selection: nativeSettingsManager.airplayCard(CardType.carousel).projectedValue) {
+                    ForEach(CardType.airplayCases, id: \.self) { type in
+                        Text(type.displayName).tag(type)
+                    }
+                }.contextMenu {
+                    Button("Help") {
+                        AppAlerts.showSyncAlert(title: "About \"AirPlay Library View\"", message: "When a controller is connected, the library will be shown on the AirPlay view instead of the main screen.", hasCancel: false)
+                    }
+                }
+                
                 
                 Picker("Library Sort", selection: nativeSettingsManager.gameSort(GameSort.none).projectedValue) {
                     ForEach(GameSort.allCases, id: \.self) { type in

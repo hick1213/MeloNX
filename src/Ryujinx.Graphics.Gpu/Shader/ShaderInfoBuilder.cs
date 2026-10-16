@@ -352,16 +352,22 @@ namespace Ryujinx.Graphics.Gpu.Shader
 
             ResourceDescriptorCollection[] descriptors = new ResourceDescriptorCollection[totalSets];
             ResourceUsageCollection[] usages = new ResourceUsageCollection[totalSets];
+            bool hasShaderWrites = false;
 
             for (int index = 0; index < totalSets; index++)
             {
                 descriptors[index] = new ResourceDescriptorCollection(_resourceDescriptors[index].ToArray().AsReadOnly());
                 usages[index] = new ResourceUsageCollection(_resourceUsages[index].ToArray().AsReadOnly());
+
+                foreach (ResourceUsage usage in _resourceUsages[index])
+                {
+                    hasShaderWrites |= usage.Write;
+                }
             }
 
             ResourceLayout resourceLayout = new(descriptors.AsReadOnly(), usages.AsReadOnly());
             bool enableAsyncCompile = GraphicsConfig.EnableAsyncShaderCompilation && pipeline.HasValue;
-            bool allowAsyncCompileSkip = enableAsyncCompile;
+            bool allowAsyncCompileSkip = enableAsyncCompile && !hasShaderWrites;
 
             if (pipeline.HasValue)
             {

@@ -24,8 +24,12 @@ enum VSyncMode: Int32, Codable, CaseIterable, Identifiable {
     }
 }
 
-extension ControllerType: CaseIterable, Identifiable {
+extension ControllerType: CaseIterable, Identifiable, Hashable {
     public var id: Int { Int(self.rawValue) }
+    
+    public func hash(into hasher: inout Hasher) {
+        hasher.combine(self.rawValue)
+    }
     
     public static var allCases: [ControllerType] = [
         .proController, .handheld, .joyconPair, .joyconLeft, .joyconRight, .pokeball,
@@ -244,9 +248,15 @@ extension AntiAliasing: CaseIterable, Identifiable {
 extension ScalingFilter: CaseIterable, Identifiable {
     public var id: Int { Int(self.rawValue) }
     
-    public static var allCases: [ScalingFilter] = [
-        .bilinear, .nearest, .fsr, .area
-    ]
+    public static var allCases: [ScalingFilter] {
+        var filters: [ScalingFilter] = [.bilinear, .nearest, .fsr, .area]
+
+        if #available(iOS 16.0, *), MetalFxBridge.isSupported {
+            filters.append(.metalFx)
+        }
+
+        return filters
+    }
     
     var displayName: String {
         switch self {
@@ -254,6 +264,7 @@ extension ScalingFilter: CaseIterable, Identifiable {
         case .nearest: return String(localized: "Nearest")
         case .fsr: return String(localized: "FSR")
         case .area: return String(localized: "Area")
+        case .metalFx: return String(localized: "MetalFX")
         default: return String(localized: "Unknown")
         }
     }

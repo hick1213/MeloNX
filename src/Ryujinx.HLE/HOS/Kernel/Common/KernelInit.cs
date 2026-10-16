@@ -45,7 +45,7 @@ namespace Ryujinx.HLE.HOS.Kernel.Common
             }
         }
 
-        public static KMemoryRegionManager[] GetMemoryRegions(MemorySize size, MemoryArrange arrange)
+        public static KMemoryRegionManager[] GetMemoryRegions(KernelContext context, MemorySize size, MemoryArrange arrange)
         {
             ulong poolEnd = KSystemControl.GetDramEndAddress(size);
             ulong applicationPoolSize = KSystemControl.GetApplicationPoolSize(arrange);
@@ -74,16 +74,16 @@ namespace Ryujinx.HLE.HOS.Kernel.Common
 
             return
             [
-                GetMemoryRegion(applicationPool),
-                GetMemoryRegion(appletPool),
-                GetMemoryRegion(servicePool),
-                GetMemoryRegion(nvServicesPool)
+                GetMemoryRegion(context, applicationPool),
+                GetMemoryRegion(context, appletPool),
+                GetMemoryRegion(context, servicePool),
+                GetMemoryRegion(context, nvServicesPool)
             ];
         }
 
-        private static KMemoryRegionManager GetMemoryRegion(MemoryRegion region)
+        private static KMemoryRegionManager GetMemoryRegion(KernelContext context, MemoryRegion region)
         {
-            return new KMemoryRegionManager(region.Address, region.Size, region.EndAddress);
+            return new KMemoryRegionManager(context, region.Address, region.Size, region.EndAddress);
         }
     }
 }

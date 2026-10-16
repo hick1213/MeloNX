@@ -385,6 +385,17 @@ namespace Ryujinx.Graphics.Vulkan
                 features2.PNext = &supportedFeaturesDynamicAttachmentFeedbackLoopLayout;
             }
 
+            PhysicalDevicePipelineCreationCacheControlFeaturesEXT supportedFeaturesPipelineCreationCacheControl = new()
+            {
+                SType = StructureType.PhysicalDevicePipelineCreationCacheControlFeaturesExt,
+                PNext = features2.PNext,
+            };
+
+            if (physicalDevice.IsDeviceExtensionPresent("VK_EXT_pipeline_creation_cache_control"))
+            {
+                features2.PNext = &supportedFeaturesPipelineCreationCacheControl;
+            }
+
             PhysicalDeviceVulkan12Features supportedPhysicalDeviceVulkan12Features = new()
             {
                 SType = StructureType.PhysicalDeviceVulkan12Features,
@@ -587,6 +598,21 @@ namespace Ryujinx.Graphics.Vulkan
                 };
 
                 pExtendedFeatures = &featuresDynamicAttachmentFeedbackLoopLayout;
+            }
+
+            PhysicalDevicePipelineCreationCacheControlFeaturesEXT featuresPipelineCreationCacheControl;
+
+            if (physicalDevice.IsDeviceExtensionPresent("VK_EXT_pipeline_creation_cache_control") &&
+                supportedFeaturesPipelineCreationCacheControl.PipelineCreationCacheControl)
+            {
+                featuresPipelineCreationCacheControl = new()
+                {
+                    SType = StructureType.PhysicalDevicePipelineCreationCacheControlFeaturesExt,
+                    PNext = pExtendedFeatures,
+                    PipelineCreationCacheControl = true,
+                };
+
+                pExtendedFeatures = &featuresPipelineCreationCacheControl;
             }
 
             string[] enabledExtensions = _requiredExtensions.Union(_desirableExtensions.Intersect(physicalDevice.DeviceExtensions)).ToArray();

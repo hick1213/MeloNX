@@ -33,10 +33,10 @@ struct PerGameSettingsView: View {
     
     private var config: Binding<Options> {
         Binding(
-            get: { ryujinxController.perSettings[titleId] ?? Options(inputPath: "") },
+            get: { ryujinxController.perSettings[titleId] ?? .init(inputPath: "") },
             set: {
                 ryujinxController.perSettings[titleId] = $0
-                ryujinxController.savePerGameConfig(titleId)
+                ryujinxController.schedulePerGameConfigSave(titleId)
             }
         )
     }
@@ -140,6 +140,9 @@ struct PerGameSettingsView: View {
             .onAppear() {
                 ryujinxController.loadPerGameConfig(titleId)
             }
+            .onDisappear {
+                ryujinxController.savePerGameConfig(titleId)
+            }
     }
     
     // MARK: - Main (iOS on normal settings, but .popOver doesn't allow for our split view)
@@ -202,9 +205,10 @@ struct PerGameSettingsView: View {
                 
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        nativeSettingsManager.reset()
-                        ryujinxController.perSettings.removeValue(forKey: titleId)
-                        dismiss()
+                        if ryujinxController.removePerGameConfig(titleId) {
+                            nativeSettingsManager.reset()
+                            dismiss()
+                        }
                     } label: {
                         Text("Remove")
                     }
@@ -212,7 +216,6 @@ struct PerGameSettingsView: View {
             }
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
-            .onAppear(perform: loadSettings)
         }
     }
     
@@ -324,8 +327,17 @@ struct PerGameSettingsView: View {
             }
 
             Section("Scaling Options") {
+                Picker("Anti-Aliasing", selection: config.antiAliasing) {
+                    ForEach(AntiAliasing.allCases, id: \.self) { antiAliasing in
+                        Text(antiAliasing.displayName).tag(antiAliasing)
+                    }
+                }
+                .pickerStyle(.menu)
+
                 Picker("Scaling Filter", selection: config.scalingFilter) {
-                    ForEach(ScalingFilter.allCases, id: \.self) { filter in
+                    ForEach(ScalingFilter.allCases.filter {
+                        config.wrappedValue.graphicsBackend == .vulkan || $0 != .metalFx
+                    }, id: \.self) { filter in
                         Text(filter.displayName).tag(filter)
                     }
                 }
@@ -345,6 +357,26 @@ struct PerGameSettingsView: View {
                         minLabel: "0%",
                         maxLabel: "100%",
                         format: "%.0f"
+                    )
+                } else if config.wrappedValue.scalingFilter == .metalFx {
+                    let outputScaleBinding = Binding<Float>(
+                        get: {
+                            config.wrappedValue.metalFxUpscaleFactor >= 4.0 ? 3.1 : config.wrappedValue.metalFxUpscaleFactor
+                        },
+                        set: { sliderValue in
+                            config.wrappedValue.metalFxUpscaleFactor = sliderValue >= 3.05 ? 4.0 : (sliderValue * 10).rounded() / 10
+                        }
+                    )
+
+                    SliderRow(
+                        "MetalFX Output Scale",
+                        value: outputScaleBinding,
+                        range: 1.0...3.1,
+                        step: 0.1,
+                        minLabel: "1.0x (Off)",
+                        maxLabel: "Host",
+                        format: "%.1f",
+                        maximumValueDisplay: "Host"
                     )
                 }
             }
@@ -366,6 +398,10 @@ struct PerGameSettingsView: View {
                 NativeToggleRow("Shader Cache", icon: "memorychip",
                                 isOn: config.disableShaderCache.reversed,
                                 info: "Shader Cache saves shaders to a file and preloads them on game launch. Leave OFF if unsure.")
+
+                NativeToggleRow("Texture Recompression", icon: "arrow.down.and.line.horizontal.and.arrow.up",
+                                isOn: config.enableTextureRecompression,
+                                info: "Re-compresses textures that your GPU can't use directly (such as BC textures on devices without BC support) instead of storing them uncompressed. Uses much less memory at a small cost in quality and texture loading time. Leave ON if unsure.")
                 
                 Picker("VSync Mode", selection: vSyncModeBinding) {
                     ForEach(VSyncMode.allCases) { mode in
@@ -400,6 +436,10 @@ struct PerGameSettingsView: View {
                                 info: "Compiles Vulkan shader pipelines in the background to reduce stalls. Newly seen effects may appear after compilation finishes. May break graphics or cause crashes in some games.")
                 .tint(.red)
                 .foregroundStyle(.red)
+
+                NativeToggleRow("Host Memory Budget Tracking", icon: "memorychip",
+                                isOn: config.enableHostMemoryBudgetTracking,
+                                info: "Sizes the texture and buffer caches from how much memory this app may actually use, and shrinks them when the system asks for memory back. Turn OFF if this game renders a blank or white screen, or loses geometry after a few seconds.")
             }
             
             // Performance Overlay
@@ -486,7 +526,7 @@ struct PerGameSettingsView: View {
             Section("Debug Logging") {
                 NativeToggleRow("Debug Logs", icon: "exclamationmark.bubble",
                                 isOn: config.loggingEnableDebug,
-                                info: "Prints debug log messages. Only enable if asked by a staff member — it degrades performance and makes logs harder to read.")
+                                info: "Prints debug log messages. Only enable if asked by a staff member, it degrades performance and makes logs harder to read.")
                 NativeToggleRow("Trace Logs", icon: "waveform.path",
                                 isOn: config.loggingEnableTrace,
                                 info: "Prints trace log messages. Does not affect performance.")
@@ -547,11 +587,6 @@ struct PerGameSettingsView: View {
     
     var miscForm: some View {
         Form {
-            // Custom ROM Folders
-            Section("Custom ROM Folders") {
-                FolderListView()
-            }
-            
             // Network
             Section {
                 NativeToggleRow("Guest Internet Access / LAN Mode", icon: "wifi.router.fill",
@@ -588,5 +623,4 @@ struct PerGameSettingsView: View {
         array.contains { $0 == value.id }
     }
     
-    private func loadSettings() { ryujinxController.loadConfig() }
 }

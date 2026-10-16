@@ -83,5 +83,10 @@ namespace Ryujinx.Graphics.Gpu
         /// Enables or disables color space passthrough, if available.
         /// </summary>
         public static bool EnableColorSpacePassthrough { get; set; } = false;
+
+        /// <summary>
+        /// Enables or disables host memory budget awareness for the GPU resource caches.
+        /// </summary>
+        public static bool EnableHostMemoryBudgetTracking { get; set; } = true;
     }
 }

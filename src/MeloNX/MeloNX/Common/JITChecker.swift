@@ -220,6 +220,7 @@ public extension ProcessInfo {
     }
     
     func isTXMIOKit() -> Bool {
+        // https://github.com/opa334/Dopamine/commit/e8438b4a64ead3997d2c70a575431cb1b4070fb9give
         let memory_map: io_registry_entry_t = IORegistryEntryFromPath(kIOMainPortDefault, "IODeviceTree:/chosen/memory-map")
         guard memory_map != 0 else { return false }
         

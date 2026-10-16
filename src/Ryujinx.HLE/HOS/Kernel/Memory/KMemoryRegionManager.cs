@@ -1,4 +1,5 @@
 using Ryujinx.Horizon.Common;
+using Ryujinx.Memory;
 using System.Diagnostics;
 
 namespace Ryujinx.HLE.HOS.Kernel.Memory
@@ -6,6 +7,7 @@ namespace Ryujinx.HLE.HOS.Kernel.Memory
     class KMemoryRegionManager
     {
         private readonly KPageHeap _pageHeap;
+        private readonly KernelContext _context;
 
         public ulong Address { get; }
         public ulong Size { get; }
@@ -13,8 +15,9 @@ namespace Ryujinx.HLE.HOS.Kernel.Memory
 
         private readonly ushort[] _pageReferenceCounts;
 
-        public KMemoryRegionManager(ulong address, ulong size, ulong endAddr)
+        public KMemoryRegionManager(KernelContext context, ulong address, ulong size, ulong endAddr)
         {
+            _context = context;
             Address = address;
             Size = size;
 
@@ -144,6 +147,8 @@ namespace Ryujinx.HLE.HOS.Kernel.Memory
         {
             lock (_pageHeap)
             {
+                ReleaseToHost(address, 1);
+
                 _pageHeap.Free(address, 1);
             }
         }
@@ -154,6 +159,8 @@ namespace Ryujinx.HLE.HOS.Kernel.Memory
             {
                 foreach (KPageNode pageNode in pageList)
                 {
+                    ReleaseToHost(pageNode.Address, pageNode.PagesCount);
+
                     _pageHeap.Free(pageNode.Address, pageNode.PagesCount);
                 }
             }
@@ -163,8 +170,20 @@ namespace Ryujinx.HLE.HOS.Kernel.Memory
         {
             lock (_pageHeap)
             {
+                ReleaseToHost(address, pagesCount);
+
                 _pageHeap.Free(address, pagesCount);
             }
+        }
+
+        private void ReleaseToHost(ulong address, ulong pagesCount)
+        {
+            if (_context == null || !MemoryReclaim.GuestPhysicalEnabled)
+            {
+                return;
+            }
+
+            _context.DecommitMemory(address - DramMemoryMap.DramBase, pagesCount * KPageTableBase.PageSize);
         }
 
         public ulong GetFreePages()
