@@ -6,6 +6,7 @@
 //
 
 import UIKit
+import MeloNXOperationCore
 
 extension URL {
     @discardableResult

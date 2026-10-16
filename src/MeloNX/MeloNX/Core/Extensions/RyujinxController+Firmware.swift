@@ -7,6 +7,7 @@
 
 import Foundation
 import UIKit
+import MeloNXOperationCore
 
 public enum FirmwareInstallState: Equatable {
     case idle

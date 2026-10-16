@@ -4,6 +4,7 @@ import Combine
 @MainActor
 final class MemoryUsageMonitor: ObservableObject {
     @Published private(set) var memoryUsage: UInt64 = 0
+    @Published private(set) var donatedMemory: UInt64 = 0
     private var timer: AnyCancellable?
     private let reader: () -> UInt64
     private let interval: TimeInterval
@@ -16,10 +17,12 @@ final class MemoryUsageMonitor: ObservableObject {
     func start() {
         guard timer == nil else { return }
         memoryUsage = reader()
+        donatedMemory = MLXRamDonor.sharedIfExists?.donatedBytes() ?? 0
         timer = Timer.publish(every: interval, on: .main, in: .common).autoconnect()
             .sink { [weak self] _ in
                 guard let self else { return }
                 self.memoryUsage = self.reader()
+                self.donatedMemory = MLXRamDonor.sharedIfExists?.donatedBytes() ?? 0
             }
     }
 
